@@ -853,7 +853,7 @@ function viewAlive(){
   const alive=TEAMS.map(t=>t.id).filter(t=>!isOut(t));
   const out=TEAMS.map(t=>t.id).filter(t=>isOut(t));
   const owner=t=>{const e=Object.entries(S.assignments).find(([id,arr])=>arr.includes(t));return e?(S.participants.find(p=>p.id===e[0])||{}).name:"";};
-  const chip=t=>`<span class="team">${flag(t)} ${esc(t)} <span class="grp">${owner(t)||groupOf(t)}</span></span>`;
+  const chip=t=>`<span class="team">${flag(t)} ${esc(t)} <span class="grp">${esc(owner(t)||groupOf(t))}</span></span>`;
   return `<div class="card"><h2>Teams still in (${alive.length})</h2>
     <p class="lead">Chip shows the owner once the draw is done.</p>
     <div>${alive.map(chip).join("")||'<span class="empty">None</span>'}</div></div>
