@@ -1,0 +1,1059 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="A World Cup 2026 office sweepstake: random balanced draw, live leaderboard, fixtures and progression scoring.">
+<title>World Cup 2026 Sweepstake</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://flagcdn.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<!-- Supabase JS (used only when configured below; harmless otherwise). -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --accent:#22d37a;
+    --accent-soft: color-mix(in srgb, var(--accent) 18%, transparent);
+    --bg:#0c1118;
+    --panel:#141b25;
+    --panel-2:#1b2430;
+    --line:#27313f;
+    --ink:#eef3f8;
+    --ink-dim:#9aa8b8;
+    --ink-faint:#5d6b7c;
+    --gold:#f5c451;
+    --bad:#ff6b6b;
+    --radius:14px;
+    --shadow:0 18px 40px -22px rgba(0,0,0,.8);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:
+      radial-gradient(1100px 500px at 80% -10%, color-mix(in srgb,var(--accent) 10%, transparent), transparent 60%),
+      radial-gradient(900px 600px at -10% 110%, rgba(80,120,255,.07), transparent 60%),
+      var(--bg);
+    color:var(--ink);
+    font-family:'Sora',system-ui,sans-serif;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  .wrap{max-width:1040px;margin:0 auto;padding:22px 18px 80px}
+  a{color:var(--accent)}
+  button{font-family:inherit}
+  /* visible keyboard focus everywhere (WCAG 2.4.7) */
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+  .skip{position:absolute;left:-9999px;top:0;background:var(--accent);color:#06140c;
+    padding:9px 14px;border-radius:0 0 8px 0;font-weight:700;z-index:120}
+  .skip:focus{left:0}
+
+  header.app{
+    display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+    padding:18px 0 20px;border-bottom:1px solid var(--line);margin-bottom:22px;
+  }
+  .crest{
+    width:50px;height:50px;border-radius:13px;flex:none;
+    background:linear-gradient(140deg,var(--accent),color-mix(in srgb,var(--accent) 40%,#000));
+    display:grid;place-items:center;font-size:26px;box-shadow:var(--shadow);
+  }
+  .titles h1{
+    font-family:'Anton',sans-serif;font-weight:400;letter-spacing:.5px;
+    font-size:clamp(26px,4.6vw,40px);margin:0;line-height:.95;text-transform:uppercase;
+  }
+  .titles .sub{color:var(--ink-dim);font-size:13px;letter-spacing:.4px;margin-top:3px}
+  .spacer{flex:1}
+  .pill{
+    font-size:11.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink-dim);
+    border:1px solid var(--line);padding:6px 11px;border-radius:999px;white-space:nowrap;
+  }
+  .pill.live{color:var(--accent);border-color:var(--accent-soft);background:var(--accent-soft)}
+
+  #authArea{display:flex;align-items:center;gap:9px}
+  .user-chip{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);
+    border-radius:999px;padding:4px 6px 4px 4px;font-size:12.5px;color:var(--ink-dim)}
+  .avatar{width:28px;height:28px;border-radius:50%;object-fit:cover;background:var(--panel-2);flex:none}
+  .gbtn{display:inline-flex;align-items:center;gap:8px}
+  .gbtn svg{width:16px;height:16px}
+
+  nav.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:22px}
+  nav.tabs button{
+    background:var(--panel);color:var(--ink-dim);border:1px solid var(--line);
+    padding:9px 15px;border-radius:999px;cursor:pointer;font-size:13.5px;font-weight:600;
+    transition:.15s;
+  }
+  nav.tabs button:hover{color:var(--ink);border-color:var(--ink-faint)}
+  nav.tabs button.on{background:var(--accent);color:#06140c;border-color:var(--accent)}
+
+  .card{
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:20px;box-shadow:var(--shadow);margin-bottom:16px;
+  }
+  .card h2{font-family:'Anton',sans-serif;font-weight:400;letter-spacing:.4px;text-transform:uppercase;
+    font-size:19px;margin:0 0 4px}
+  .card .lead{color:var(--ink-dim);font-size:14px;margin:0 0 16px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:680px){.grid2{grid-template-columns:1fr}}
+
+  label.fld{display:block;margin-bottom:13px}
+  label.fld span.lbl{display:block;font-size:12px;color:var(--ink-dim);margin-bottom:5px;letter-spacing:.3px}
+  input,select,textarea{
+    width:100%;background:var(--panel-2);border:1px solid var(--line);color:var(--ink);
+    padding:11px 13px;border-radius:10px;font-family:inherit;font-size:14.5px;
+  }
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
+  input[type=color]{padding:4px;height:44px;cursor:pointer}
+
+  .btn{
+    background:var(--accent);color:#06140c;border:none;padding:11px 18px;border-radius:10px;
+    font-weight:700;cursor:pointer;font-size:14px;transition:.15s;
+  }
+  .btn:hover{filter:brightness(1.07)}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+  .btn.ghost:hover{border-color:var(--ink-faint)}
+  .btn.danger{background:transparent;color:var(--bad);border:1px solid color-mix(in srgb,var(--bad) 40%,transparent)}
+  .btn.sm{padding:7px 12px;font-size:12.5px;border-radius:8px}
+  .btn.white{background:#fff;color:#1a1a1a}
+  .row{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+
+  .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:11px 10px;border-bottom:1px solid var(--line)}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-faint);font-weight:600}
+  tr:last-child td{border-bottom:none}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  @media(max-width:680px){ th,td{padding:9px 7px;font-size:13px} }
+
+  .rank{font-family:'Anton',sans-serif;font-size:20px;width:34px;color:var(--ink-faint)}
+  .rank.top{color:var(--gold)}
+  .pts{font-family:'Anton',sans-serif;font-size:20px;color:var(--accent)}
+  .me-row{background:var(--accent-soft)}
+  .spoon td{color:var(--bad)}
+
+  .flag{width:22px;height:auto;border-radius:2px;vertical-align:middle;
+    box-shadow:0 0 0 1px rgba(0,0,0,.35);background:var(--panel-2)}
+  .noflag{display:inline-block;width:22px;text-align:center}
+  .team .flag{width:19px}
+  .team{display:inline-flex;align-items:center;gap:7px;background:var(--panel-2);
+    border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:13px;margin:3px 4px 3px 0}
+  .team.out{opacity:.45;text-decoration:line-through}
+  .team .grp{color:var(--ink-faint);font-size:11px}
+
+  .stat{display:flex;gap:18px;flex-wrap:wrap;margin-top:6px}
+  .stat .b{background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:12px 16px;flex:1;min-width:130px}
+  .stat .b .n{font-family:'Anton',sans-serif;font-size:26px;line-height:1}
+  .stat .b .l{font-size:11.5px;color:var(--ink-dim);letter-spacing:.3px;margin-top:4px;text-transform:uppercase}
+
+  .note{font-size:12.5px;color:var(--ink-faint);margin-top:10px}
+  .warn{background:color-mix(in srgb,var(--gold) 12%,transparent);border:1px solid color-mix(in srgb,var(--gold) 35%,transparent);
+    color:var(--gold);padding:11px 14px;border-radius:10px;font-size:13px;margin-bottom:14px}
+  .good{background:var(--accent-soft);border:1px solid var(--accent-soft);color:var(--ink);
+    padding:11px 14px;border-radius:10px;font-size:13px;margin-bottom:14px}
+  .empty{color:var(--ink-faint);font-size:14px;padding:24px 6px;text-align:center}
+
+  fieldset.grp-set{border:1px solid var(--line);border-radius:11px;margin:0 0 10px;padding:10px 12px 12px}
+  fieldset.grp-set legend{font-weight:700;font-size:13px;padding:0 6px;color:var(--accent)}
+
+  .grouprow{display:grid;grid-template-columns:1fr 130px 50px 50px;gap:8px;align-items:center;margin-bottom:7px}
+  @media(max-width:560px){.grouprow{grid-template-columns:1fr 60px 50px 50px}.grouprow .gd{display:none}}
+  .grouprow .vs{font-size:13px}
+  .grouprow input{padding:7px 8px;text-align:center;font-size:14px}
+  .pendtag{font-size:11px;color:var(--gold);margin-left:6px;white-space:nowrap}
+  .ko-team{display:flex;align-items:center;gap:8px;padding:8px 9px;border:1px solid var(--line);
+    border-radius:9px;margin:0 0 6px;cursor:pointer;background:var(--panel-2);font-size:13.5px}
+  .ko-team.sel{border-color:var(--accent);background:var(--accent-soft)}
+  .ko-team input{width:18px;height:18px;flex:none;accent-color:var(--accent)}
+  .kogrid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  @media(max-width:680px){.kogrid{grid-template-columns:1fr}}
+
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--panel-2);
+    border:1px solid var(--accent);color:var(--ink);padding:11px 18px;border-radius:10px;font-size:14px;
+    box-shadow:var(--shadow);opacity:0;transition:.25s;pointer-events:none;z-index:50;max-width:90vw}
+  .toast.show{opacity:1;bottom:30px}
+  .scrim{position:fixed;inset:0;background:rgba(5,8,12,.7);display:none;place-items:center;z-index:40;padding:18px}
+  .scrim.show{display:grid}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:22px;max-width:400px;width:100%;box-shadow:var(--shadow)}
+  .demobar{background:color-mix(in srgb,var(--gold) 16%,var(--panel));border-bottom:1px solid color-mix(in srgb,var(--gold) 40%,transparent);
+    color:var(--gold);font-size:12.5px;text-align:center;padding:7px 14px}
+</style>
+</head>
+<body>
+<a href="#view" class="skip">Skip to content</a>
+<div class="demobar" id="demobar" hidden></div>
+<div class="wrap">
+  <header class="app">
+    <div class="crest" id="crest" aria-hidden="true">&#9917;</div>
+    <div class="titles">
+      <h1 id="evtName">World Cup 2026 Sweepstake</h1>
+      <div class="sub" id="evtSub">Loading&hellip;</div>
+    </div>
+    <div class="spacer"></div>
+    <div id="authArea"></div>
+    <div class="pill" id="statePill">&mdash;</div>
+  </header>
+
+  <nav class="tabs" id="tabs" aria-label="Sections"></nav>
+  <main id="view" tabindex="-1"></main>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="scrim" id="scrim"><div class="modal" id="modalBody" role="dialog" aria-modal="true"></div></div>
+
+<script>
+/* =====================================================================
+   CONFIG — fill these in to go live (see SETUP.md).
+   Leave the placeholders to run in local DEMO mode (data stays in this
+   browser only; no sign-in, you are the organiser automatically).
+   The anon key is safe to expose publicly — Row Level Security protects
+   the data. Never paste the service_role key here.
+   ===================================================================== */
+const CONFIG = {
+  SUPABASE_URL:  "https://voqwpmmgrvalavvmzrih.supabase.co",
+  SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZvcXdwbW1ncnZhbGF2dm16cmloIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0NTI0NjgsImV4cCI6MjA5NjAyODQ2OH0.t0kROq7-8CgwKpJmymKsOtvANHIztwhSC9u8ab4rTVM"
+};
+
+/* ============ Tournament data: 2026 FIFA World Cup, confirmed draw ============ */
+const GROUPS = {
+  A:["Mexico","South Africa","South Korea","Czechia"],
+  B:["Canada","Bosnia & Herzegovina","Qatar","Switzerland"],
+  C:["Brazil","Morocco","Haiti","Scotland"],
+  D:["United States","Paraguay","Australia","Türkiye"],
+  E:["Germany","Curaçao","Ivory Coast","Ecuador"],
+  F:["Netherlands","Japan","Sweden","Tunisia"],
+  G:["Belgium","Egypt","Iran","New Zealand"],
+  H:["Spain","Cape Verde","Saudi Arabia","Uruguay"],
+  I:["France","Senegal","Iraq","Norway"],
+  J:["Argentina","Algeria","Austria","Jordan"],
+  K:["Portugal","Colombia","DR Congo","Uzbekistan"],
+  L:["England","Croatia","Ghana","Panama"]
+};
+// ISO 3166-1 alpha-2 (plus gb-eng / gb-sct subdivisions) for flag images.
+const FLAG_CODE = {
+  "Mexico":"mx","South Africa":"za","South Korea":"kr","Czechia":"cz","Canada":"ca",
+  "Bosnia & Herzegovina":"ba","Qatar":"qa","Switzerland":"ch","Brazil":"br","Morocco":"ma",
+  "Haiti":"ht","Scotland":"gb-sct","United States":"us","Paraguay":"py","Australia":"au","Türkiye":"tr",
+  "Germany":"de","Curaçao":"cw","Ivory Coast":"ci","Ecuador":"ec","Netherlands":"nl","Japan":"jp",
+  "Sweden":"se","Tunisia":"tn","Belgium":"be","Egypt":"eg","Iran":"ir","New Zealand":"nz",
+  "Spain":"es","Cape Verde":"cv","Saudi Arabia":"sa","Uruguay":"uy","France":"fr","Senegal":"sn",
+  "Iraq":"iq","Norway":"no","Argentina":"ar","Algeria":"dz","Austria":"at","Jordan":"jo",
+  "Portugal":"pt","Colombia":"co","DR Congo":"cd","Uzbekistan":"uz","England":"gb-eng","Croatia":"hr",
+  "Ghana":"gh","Panama":"pa"
+};
+function flag(t){
+  const c=FLAG_CODE[t];
+  if(!c) return '<span class="noflag" aria-hidden="true">&#9917;</span>';
+  return `<img class="flag" src="https://flagcdn.com/w40/${c}.png" srcset="https://flagcdn.com/w80/${c}.png 2x" width="22" alt="" loading="lazy">`;
+}
+// strength tier 1 (strongest) -> 4, used only to spread teams fairly in the draw
+const TIER = {
+  "Spain":1,"Argentina":1,"France":1,"England":1,"Brazil":1,"Germany":1,"Portugal":1,"Netherlands":1,
+  "Belgium":1,"Croatia":1,"Morocco":1,"Colombia":2,"Uruguay":2,"Switzerland":2,"Japan":2,"Senegal":2,
+  "United States":2,"Mexico":2,"Norway":2,"Ecuador":2,"South Korea":2,"Austria":3,"Egypt":3,"Iran":3,
+  "Australia":3,"Ivory Coast":3,"Algeria":3,"Paraguay":3,"Scotland":3,"Canada":3,"Panama":3,"Tunisia":3,
+  "Qatar":3,"Saudi Arabia":4,"South Africa":4,"Uzbekistan":4,"Türkiye":4,"Sweden":4,"Czechia":4,
+  "Bosnia & Herzegovina":4,"Iraq":4,"DR Congo":4,"Jordan":4,"Cape Verde":4,"Ghana":4,"Curaçao":4,
+  "Haiti":4,"New Zealand":4
+};
+const TEAMS = [];
+Object.entries(GROUPS).forEach(([g,arr])=>arr.forEach(t=>TEAMS.push({id:t,group:g,tier:TIER[t]||3})));
+const GROUP_COMBOS = [[0,1],[0,2],[0,3],[1,2],[1,3],[2,3]];
+const STAGES = [
+  {key:"R32",label:"Round of 32",pts:5,size:32},
+  {key:"R16",label:"Round of 16",pts:10,size:16},
+  {key:"QF", label:"Quarter-final",pts:20,size:8},
+  {key:"SF", label:"Semi-final",pts:35,size:4},
+  {key:"F",  label:"Final",pts:55,size:2},
+  {key:"W",  label:"Champion",pts:100,size:1}
+];
+
+/* ============ Fixtures (verified vs openfootball + FIFA, all 72 dated) ============ */
+const CONFIRMED = [
+  {g:"A",h:"Mexico",a:"South Africa",d:"2026-06-11"},{g:"A",h:"South Korea",a:"Czechia",d:"2026-06-11"},
+  {g:"A",h:"Czechia",a:"South Africa",d:"2026-06-18"},{g:"A",h:"Mexico",a:"South Korea",d:"2026-06-18"},
+  {g:"A",h:"Czechia",a:"Mexico",d:"2026-06-24"},{g:"A",h:"South Africa",a:"South Korea",d:"2026-06-24"},
+  {g:"B",h:"Canada",a:"Bosnia & Herzegovina",d:"2026-06-12"},{g:"B",h:"Qatar",a:"Switzerland",d:"2026-06-13"},
+  {g:"B",h:"Switzerland",a:"Bosnia & Herzegovina",d:"2026-06-18"},{g:"B",h:"Canada",a:"Qatar",d:"2026-06-18"},
+  {g:"B",h:"Switzerland",a:"Canada",d:"2026-06-24"},{g:"B",h:"Bosnia & Herzegovina",a:"Qatar",d:"2026-06-24"},
+  {g:"C",h:"Brazil",a:"Morocco",d:"2026-06-13"},{g:"C",h:"Haiti",a:"Scotland",d:"2026-06-13"},
+  {g:"C",h:"Scotland",a:"Morocco",d:"2026-06-19"},{g:"C",h:"Brazil",a:"Haiti",d:"2026-06-19"},
+  {g:"C",h:"Scotland",a:"Brazil",d:"2026-06-24"},{g:"C",h:"Morocco",a:"Haiti",d:"2026-06-24"},
+  {g:"D",h:"United States",a:"Paraguay",d:"2026-06-12"},{g:"D",h:"Australia",a:"Türkiye",d:"2026-06-13"},
+  {g:"D",h:"United States",a:"Australia",d:"2026-06-19"},{g:"D",h:"Türkiye",a:"Paraguay",d:"2026-06-19"},
+  {g:"D",h:"Türkiye",a:"United States",d:"2026-06-25"},{g:"D",h:"Paraguay",a:"Australia",d:"2026-06-25"},
+  {g:"E",h:"Germany",a:"Curaçao",d:"2026-06-14"},{g:"E",h:"Ivory Coast",a:"Ecuador",d:"2026-06-14"},
+  {g:"E",h:"Germany",a:"Ivory Coast",d:"2026-06-20"},{g:"E",h:"Ecuador",a:"Curaçao",d:"2026-06-20"},
+  {g:"E",h:"Curaçao",a:"Ivory Coast",d:"2026-06-25"},{g:"E",h:"Ecuador",a:"Germany",d:"2026-06-25"},
+  {g:"F",h:"Netherlands",a:"Japan",d:"2026-06-14"},{g:"F",h:"Sweden",a:"Tunisia",d:"2026-06-14"},
+  {g:"F",h:"Netherlands",a:"Sweden",d:"2026-06-20"},{g:"F",h:"Tunisia",a:"Japan",d:"2026-06-20"},
+  {g:"F",h:"Japan",a:"Sweden",d:"2026-06-25"},{g:"F",h:"Tunisia",a:"Netherlands",d:"2026-06-25"},
+  {g:"G",h:"Belgium",a:"Egypt",d:"2026-06-15"},{g:"G",h:"Iran",a:"New Zealand",d:"2026-06-15"},
+  {g:"G",h:"Belgium",a:"Iran",d:"2026-06-21"},{g:"G",h:"New Zealand",a:"Egypt",d:"2026-06-21"},
+  {g:"G",h:"Egypt",a:"Iran",d:"2026-06-26"},{g:"G",h:"New Zealand",a:"Belgium",d:"2026-06-26"},
+  {g:"H",h:"Spain",a:"Cape Verde",d:"2026-06-15"},{g:"H",h:"Saudi Arabia",a:"Uruguay",d:"2026-06-15"},
+  {g:"H",h:"Spain",a:"Saudi Arabia",d:"2026-06-21"},{g:"H",h:"Uruguay",a:"Cape Verde",d:"2026-06-21"},
+  {g:"H",h:"Cape Verde",a:"Saudi Arabia",d:"2026-06-26"},{g:"H",h:"Uruguay",a:"Spain",d:"2026-06-26"},
+  {g:"I",h:"France",a:"Senegal",d:"2026-06-16"},{g:"I",h:"Iraq",a:"Norway",d:"2026-06-16"},
+  {g:"I",h:"France",a:"Iraq",d:"2026-06-22"},{g:"I",h:"Norway",a:"Senegal",d:"2026-06-22"},
+  {g:"I",h:"Norway",a:"France",d:"2026-06-26"},{g:"I",h:"Senegal",a:"Iraq",d:"2026-06-26"},
+  {g:"J",h:"Argentina",a:"Algeria",d:"2026-06-16"},{g:"J",h:"Austria",a:"Jordan",d:"2026-06-16"},
+  {g:"J",h:"Argentina",a:"Austria",d:"2026-06-22"},{g:"J",h:"Jordan",a:"Algeria",d:"2026-06-22"},
+  {g:"J",h:"Algeria",a:"Austria",d:"2026-06-27"},{g:"J",h:"Jordan",a:"Argentina",d:"2026-06-27"},
+  {g:"K",h:"Portugal",a:"DR Congo",d:"2026-06-17"},{g:"K",h:"Uzbekistan",a:"Colombia",d:"2026-06-17"},
+  {g:"K",h:"Portugal",a:"Uzbekistan",d:"2026-06-23"},{g:"K",h:"Colombia",a:"DR Congo",d:"2026-06-23"},
+  {g:"K",h:"Colombia",a:"Portugal",d:"2026-06-27"},{g:"K",h:"DR Congo",a:"Uzbekistan",d:"2026-06-27"},
+  {g:"L",h:"England",a:"Croatia",d:"2026-06-17"},{g:"L",h:"Ghana",a:"Panama",d:"2026-06-17"},
+  {g:"L",h:"England",a:"Ghana",d:"2026-06-23"},{g:"L",h:"Panama",a:"Croatia",d:"2026-06-23"},
+  {g:"L",h:"Panama",a:"England",d:"2026-06-27"},{g:"L",h:"Croatia",a:"Ghana",d:"2026-06-27"}
+];
+function pairKey(a,b){return [a,b].sort().join("|");}
+const CONFIRMED_MAP={}; CONFIRMED.forEach(f=>CONFIRMED_MAP[pairKey(f.h,f.a)]=f.d);
+
+// Kickoff times in US Eastern (EDT, -04:00 all tournament). Stored with the
+// explicit offset so the browser renders each in the VIEWER's own timezone.
+// Source: the validated WC26 calendar tool.
+const KICKOFF_ET = [
+  {h:"Mexico",a:"South Africa",t:"2026-06-11T15:00"},{h:"South Korea",a:"Czechia",t:"2026-06-11T22:00"},
+  {h:"Canada",a:"Bosnia & Herzegovina",t:"2026-06-12T15:00"},{h:"United States",a:"Paraguay",t:"2026-06-12T21:00"},
+  {h:"Qatar",a:"Switzerland",t:"2026-06-13T15:00"},{h:"Brazil",a:"Morocco",t:"2026-06-13T18:00"},{h:"Haiti",a:"Scotland",t:"2026-06-13T21:00"},
+  {h:"Australia",a:"Türkiye",t:"2026-06-14T12:00"},{h:"Germany",a:"Curaçao",t:"2026-06-14T13:00"},{h:"Netherlands",a:"Japan",t:"2026-06-14T16:00"},
+  {h:"Ivory Coast",a:"Ecuador",t:"2026-06-14T19:00"},{h:"Sweden",a:"Tunisia",t:"2026-06-14T22:00"},
+  {h:"Spain",a:"Cape Verde",t:"2026-06-15T12:00"},{h:"Belgium",a:"Egypt",t:"2026-06-15T15:00"},{h:"Saudi Arabia",a:"Uruguay",t:"2026-06-15T18:00"},{h:"Iran",a:"New Zealand",t:"2026-06-15T21:00"},
+  {h:"France",a:"Senegal",t:"2026-06-16T15:00"},{h:"Iraq",a:"Norway",t:"2026-06-16T18:00"},{h:"Argentina",a:"Algeria",t:"2026-06-16T21:00"},{h:"Austria",a:"Jordan",t:"2026-06-17T00:00"},
+  {h:"Portugal",a:"DR Congo",t:"2026-06-17T13:00"},{h:"England",a:"Croatia",t:"2026-06-17T16:00"},{h:"Ghana",a:"Panama",t:"2026-06-17T19:00"},{h:"Uzbekistan",a:"Colombia",t:"2026-06-17T22:00"},
+  {h:"Czechia",a:"South Africa",t:"2026-06-18T12:00"},{h:"Switzerland",a:"Bosnia & Herzegovina",t:"2026-06-18T15:00"},{h:"Canada",a:"Qatar",t:"2026-06-18T18:00"},{h:"Mexico",a:"South Korea",t:"2026-06-18T21:00"},
+  {h:"United States",a:"Australia",t:"2026-06-19T15:00"},{h:"Scotland",a:"Morocco",t:"2026-06-19T18:00"},{h:"Brazil",a:"Haiti",t:"2026-06-19T20:30"},{h:"Türkiye",a:"Paraguay",t:"2026-06-19T23:00"},
+  {h:"Netherlands",a:"Sweden",t:"2026-06-20T13:00"},{h:"Germany",a:"Ivory Coast",t:"2026-06-20T16:00"},{h:"Ecuador",a:"Curaçao",t:"2026-06-20T20:00"},{h:"Tunisia",a:"Japan",t:"2026-06-21T00:00"},
+  {h:"Spain",a:"Saudi Arabia",t:"2026-06-21T12:00"},{h:"Belgium",a:"Iran",t:"2026-06-21T15:00"},{h:"Uruguay",a:"Cape Verde",t:"2026-06-21T18:00"},{h:"New Zealand",a:"Egypt",t:"2026-06-21T21:00"},
+  {h:"Argentina",a:"Austria",t:"2026-06-22T13:00"},{h:"France",a:"Iraq",t:"2026-06-22T17:00"},{h:"Norway",a:"Senegal",t:"2026-06-22T20:00"},{h:"Jordan",a:"Algeria",t:"2026-06-22T23:00"},
+  {h:"Portugal",a:"Uzbekistan",t:"2026-06-23T13:00"},{h:"England",a:"Ghana",t:"2026-06-23T16:00"},{h:"Panama",a:"Croatia",t:"2026-06-23T19:00"},{h:"Colombia",a:"DR Congo",t:"2026-06-23T22:00"},
+  {h:"Switzerland",a:"Canada",t:"2026-06-24T15:00"},{h:"Bosnia & Herzegovina",a:"Qatar",t:"2026-06-24T15:00"},{h:"Scotland",a:"Brazil",t:"2026-06-24T18:00"},{h:"Morocco",a:"Haiti",t:"2026-06-24T18:00"},
+  {h:"Czechia",a:"Mexico",t:"2026-06-24T21:00"},{h:"South Africa",a:"South Korea",t:"2026-06-24T21:00"},
+  {h:"Curaçao",a:"Ivory Coast",t:"2026-06-25T16:00"},{h:"Ecuador",a:"Germany",t:"2026-06-25T16:00"},{h:"Japan",a:"Sweden",t:"2026-06-25T19:00"},{h:"Tunisia",a:"Netherlands",t:"2026-06-25T19:00"},
+  {h:"Türkiye",a:"United States",t:"2026-06-25T22:00"},{h:"Paraguay",a:"Australia",t:"2026-06-25T22:00"},
+  {h:"Norway",a:"France",t:"2026-06-26T15:00"},{h:"Senegal",a:"Iraq",t:"2026-06-26T15:00"},{h:"Cape Verde",a:"Saudi Arabia",t:"2026-06-26T20:00"},{h:"Uruguay",a:"Spain",t:"2026-06-26T20:00"},
+  {h:"Egypt",a:"Iran",t:"2026-06-26T23:00"},{h:"New Zealand",a:"Belgium",t:"2026-06-26T23:00"},
+  {h:"Panama",a:"England",t:"2026-06-27T17:00"},{h:"Croatia",a:"Ghana",t:"2026-06-27T17:00"},{h:"Colombia",a:"Portugal",t:"2026-06-27T19:30"},{h:"DR Congo",a:"Uzbekistan",t:"2026-06-27T19:30"},
+  {h:"Algeria",a:"Austria",t:"2026-06-27T22:00"},{h:"Jordan",a:"Argentina",t:"2026-06-27T22:00"}
+];
+const KICKOFF_MAP={}; KICKOFF_ET.forEach(k=>KICKOFF_MAP[pairKey(k.h,k.a)]=k.t+":00-04:00");
+const TZNAME=(()=>{try{return Intl.DateTimeFormat().resolvedOptions().timeZone||"";}catch(e){return "";}})();
+
+/* ============ App state ============ */
+let S = null;          // assembled view-model for the current pool
+let meId = null;       // my participant id in this pool (from auth)
+let poolId = null;     // current pool slug
+let unsub = null;      // realtime unsubscribe
+let tab = "join";
+
+const $ = s=>document.querySelector(s);
+const uid = ()=>Math.random().toString(36).slice(2,9);
+function shuffle(a){a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+function esc(s){return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function slug(s){return (s||"pool").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,24)||"pool";}
+function lc(s){return (s||"").toLowerCase();}
+function toast(m){const el=$("#toast");el.textContent=m;el.classList.add("show");clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove("show"),2800);}
+function modal(html){$("#modalBody").innerHTML=html;$("#scrim").classList.add("show");}
+function closeModal(){$("#scrim").classList.remove("show");}
+$("#scrim").addEventListener("click",e=>{if(e.target.id==="scrim")closeModal();});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeModal();});
+function blankConfig(){
+  return { header:"World Cup 2026 Sweepstake", accentColor:"#22d37a", pot:"",
+           prizes:{first:"",second:"",spoon:""}, scoring:{win:3,draw:1},
+           signupsOpen:true, drawDone:false, setupDone:true };
+}
+function teamChip(t,extra=""){const out=isOut(t)?" out":"";return `<span class="team${out} ${extra}">${flag(t)} ${esc(t)} <span class="grp">${groupOf(t)}</span></span>`;}
+function groupOf(t){const x=TEAMS.find(z=>z.id===t);return x?x.group:"";}
+
+/* ============ Assemble the view-model from normalized rows ============ */
+function tierThenName(a,b){const ta=TIER[a]||3,tb=TIER[b]||3;return ta-tb||a.localeCompare(b);}
+function assembleS(pool, parts, asg, gr, adv){
+  const cfg=Object.assign({}, blankConfig(), pool.config||{});
+  cfg.id=pool.id; cfg.name=pool.name||cfg.header; cfg.organiserEmails=(pool.organiser_emails||[]).map(lc);
+  const participants=(parts||[]).map(p=>({id:p.id,name:p.name,user_id:p.user_id||null,email:p.email||null}))
+    .sort((a,b)=>a.name.localeCompare(b.name));
+  const assignments={}; participants.forEach(p=>assignments[p.id]=[]);
+  (asg||[]).forEach(r=>{(assignments[r.participant_id]=assignments[r.participant_id]||[]).push(r.team);});
+  Object.values(assignments).forEach(l=>l.sort(tierThenName));
+  const group={}; Object.keys(GROUPS).forEach(g=>group[g]=GROUP_COMBOS.map(()=>({sa:"",sb:"",date:"",pa:"",pb:"",source:""})));
+  (gr||[]).forEach(r=>{ if(!group[r.grp]||r.idx<0||r.idx>5) return; group[r.grp][r.idx]={
+    sa:r.score_a==null?"":String(r.score_a), sb:r.score_b==null?"":String(r.score_b),
+    date:r.match_date||"", pa:r.pending_a==null?"":String(r.pending_a),
+    pb:r.pending_b==null?"":String(r.pending_b), source:r.source||"" }; });
+  const advanced={R32:[],R16:[],QF:[],SF:[],F:[],W:[]};
+  (adv||[]).forEach(r=>{(advanced[r.stage]=advanced[r.stage]||[]).push(r.team);});
+  return {config:cfg, participants, assignments, results:{group,advanced}};
+}
+
+/* ============ Scoring engine ============ */
+function stageReached(t){for(let i=STAGES.length-1;i>=0;i--){if((S.results.advanced[STAGES[i].key]||[]).includes(t))return i+1;}return 0;}
+function currentStageIndex(){for(let i=STAGES.length-1;i>=0;i--){if((S.results.advanced[STAGES[i].key]||[]).length)return i+1;}return 0;}
+function isOut(t){const cs=currentStageIndex();if(cs===0)return false;return stageReached(t)<cs;}
+function groupPoints(t){
+  let p=0;const g=groupOf(t);const arr=S.results.group[g];if(!arr)return 0;const teams=GROUPS[g];
+  arr.forEach((m,i)=>{
+    if(!m||m.sa===""||m.sb===""||m.sa==null||m.sb==null)return;
+    const a=teams[GROUP_COMBOS[i][0]],b=teams[GROUP_COMBOS[i][1]];const sa=+m.sa,sb=+m.sb;
+    if(t!==a&&t!==b)return;const mine=(t===a)?sa:sb,theirs=(t===a)?sb:sa;
+    if(mine>theirs)p+=S.config.scoring.win; else if(mine===theirs)p+=S.config.scoring.draw;
+  });
+  return p;
+}
+function progressionPoints(t){const st=stageReached(t);let p=0;for(let i=0;i<st;i++)p+=STAGES[i].pts;return p;}
+function teamPoints(t){return groupPoints(t)+progressionPoints(t);}
+function playerPoints(id){return (S.assignments[id]||[]).reduce((s,t)=>s+teamPoints(t),0);}
+function standings(){
+  const rows=S.participants.map(p=>({id:p.id,name:p.name,pts:playerPoints(p.id),
+    alive:(S.assignments[p.id]||[]).filter(t=>!isOut(t)).length,teams:(S.assignments[p.id]||[]).length}));
+  rows.sort((a,b)=>b.pts-a.pts||b.alive-a.alive||a.name.localeCompare(b.name));
+  return rows;
+}
+
+/* ============ Group tables + automated R32 qualification ============ */
+function groupTable(g){
+  const teams=GROUPS[g];const st={};teams.forEach(t=>st[t]={t,pld:0,gf:0,ga:0,pts:0});
+  (S.results.group[g]||[]).forEach((m,i)=>{
+    if(!m||m.sa===""||m.sb===""||m.sa==null||m.sb==null)return;
+    const a=teams[GROUP_COMBOS[i][0]],b=teams[GROUP_COMBOS[i][1]];const sa=+m.sa,sb=+m.sb;
+    const A=st[a],B=st[b];A.pld++;B.pld++;A.gf+=sa;A.ga+=sb;B.gf+=sb;B.ga+=sa;
+    if(sa>sb)A.pts+=3;else if(sa<sb)B.pts+=3;else{A.pts++;B.pts++;}
+  });
+  // FIFA-style ranking: points, then goal difference, then goals for.
+  return Object.values(st).map(x=>({...x,gd:x.gf-x.ga}))
+    .sort((x,y)=>y.pts-x.pts||y.gd-x.gd||y.gf-x.gf||x.t.localeCompare(y.t));
+}
+function autoQualifyR32(){
+  const winners=[],runners=[],thirds=[];
+  for(const g of Object.keys(GROUPS)){
+    const played=(S.results.group[g]||[]).filter(m=>m&&m.sa!==""&&m.sb!==""&&m.sa!=null&&m.sb!=null).length;
+    if(played<6) return {ok:false,msg:`Group ${g} has only ${played}/6 results entered.`};
+    const tab=groupTable(g);
+    winners.push(tab[0].t);runners.push(tab[1].t);thirds.push({...tab[2],g});
+  }
+  thirds.sort((x,y)=>y.pts-x.pts||y.gd-x.gd||y.gf-x.gf||x.t.localeCompare(y.t));
+  const best8=thirds.slice(0,8).map(x=>x.t);
+  return {ok:true, teams:[...winners,...runners,...best8], best8};
+}
+
+/* ============ Draw (balanced snake over strength tiers) ============ */
+function computeDraw(){
+  const order=shuffle(S.participants.map(p=>p.id));
+  let pool=[];for(let t=1;t<=4;t++)pool=pool.concat(shuffle(TEAMS.filter(x=>x.tier===t).map(x=>x.id)));
+  const n=order.length;const out=[];
+  pool.forEach((teamId,k)=>{const round=Math.floor(k/n);const pos=(round%2===0)?(k%n):(n-1-(k%n));out.push({participant_id:order[pos],team:teamId});});
+  return out;
+}
+
+/* ============ Fixtures helpers ============ */
+function fxDate(g,i){
+  const c=GROUP_COMBOS[i],t0=GROUPS[g][c[0]],t1=GROUPS[g][c[1]];
+  const stored=S.results.group[g]&&S.results.group[g][i]&&S.results.group[g][i].date;
+  if(stored)return stored;
+  return CONFIRMED_MAP[pairKey(t0,t1)]||"";
+}
+function fxScore(g,i){const m=S.results.group[g]&&S.results.group[g][i];if(m&&m.sa!==""&&m.sa!=null&&m.sb!==""&&m.sb!=null)return m.sa+" - "+m.sb;return null;}
+// UTC kickoff instant, unless the organiser set a custom date (then date-only).
+function fxInstant(g,i){
+  const override=S.results.group[g]&&S.results.group[g][i]&&S.results.group[g][i].date;
+  if(override) return "";
+  const c=GROUP_COMBOS[i]; return KICKOFF_MAP[pairKey(GROUPS[g][c[0]],GROUPS[g][c[1]])]||"";
+}
+function fxSortKey(g,i){const inst=fxInstant(g,i);if(inst)return new Date(inst).getTime();const d=fxDate(g,i);return d?new Date(d+"T12:00:00Z").getTime():8.64e15;}
+function fxDayKey(g,i){const inst=fxInstant(g,i);if(inst)return new Date(inst).toLocaleDateString(undefined,{year:"numeric",month:"2-digit",day:"2-digit"});return fxDate(g,i)||"zzzz";}
+function fxDayLabel(g,i){const inst=fxInstant(g,i);if(inst)return new Date(inst).toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short"});return fmtDate(fxDate(g,i));}
+function fxTimeLabel(g,i){const inst=fxInstant(g,i);if(inst)return new Date(inst).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});return "";}
+function allFixtures(){const out=[];Object.keys(GROUPS).forEach(g=>GROUP_COMBOS.forEach((c,i)=>{out.push({g,i,t0:GROUPS[g][c[0]],t1:GROUPS[g][c[1]],date:fxDate(g,i),score:fxScore(g,i),sort:fxSortKey(g,i),dayKey:fxDayKey(g,i),dayLabel:fxDayLabel(g,i),timeLabel:fxTimeLabel(g,i)});}));return out;}
+function teamFixtures(team){return allFixtures().filter(f=>f.t0===team||f.t1===team).sort((a,b)=>a.sort-b.sort);}
+function fmtDate(iso){if(!iso)return "Date TBC";const d=new Date(iso+"T12:00:00Z");return d.toLocaleDateString(undefined,{timeZone:"UTC",weekday:"short",day:"numeric",month:"short"});}
+function poolLink(){const base=location.href.split('#')[0].split('?')[0];return base+"?pool="+encodeURIComponent(poolId||"");}
+function deviceMeKey(){return "wc_me_"+poolId;}
+function getDeviceMe(){try{return localStorage.getItem(deviceMeKey());}catch(e){return null;}}
+function setDeviceMe(id){try{if(id)localStorage.setItem(deviceMeKey(),id);}catch(e){}}
+function meLink(){return poolLink()+"&me="+encodeURIComponent(getDeviceMe()||meId||"");}
+
+/* =====================================================================
+   DATA LAYER — one interface, two adapters.
+   Supabase when CONFIG is set; otherwise a localStorage demo so the file
+   runs and is testable with no backend.
+   ===================================================================== */
+const CONFIGURED = !!(CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY
+  && !CONFIG.SUPABASE_URL.includes("YOUR_") && window.supabase);
+let sb = CONFIGURED ? window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY) : null;
+let CURRENT_USER = null, onAuthCb = null;
+
+function userFromSession(s){
+  if(!s||!s.user)return null;const u=s.user;const m=u.user_metadata||{};
+  return {id:u.id,email:u.email,name:m.full_name||m.name||u.email,avatar:m.avatar_url||m.picture||""};
+}
+
+const Auth = {
+  async init(){
+    if(CONFIGURED){
+      const {data}=await sb.auth.getSession();
+      CURRENT_USER=userFromSession(data.session);
+      sb.auth.onAuthStateChange((_e,session)=>{CURRENT_USER=userFromSession(session);if(onAuthCb)onAuthCb();});
+    } else {
+      try{CURRENT_USER=JSON.parse(localStorage.getItem("wc_demo_user")||"null");}catch(e){}
+    }
+  },
+  user(){return CURRENT_USER;},
+  async signIn(){
+    if(CONFIGURED){ await sb.auth.signInWithOAuth({provider:"google",options:{redirectTo:location.href}}); }
+    else { demoSignIn(); }
+  },
+  async signOut(){
+    if(CONFIGURED){ await sb.auth.signOut(); }
+    else { localStorage.removeItem("wc_demo_user"); CURRENT_USER=null; if(onAuthCb)onAuthCb(); }
+  },
+  onChange(cb){onAuthCb=cb;}
+};
+function demoSignIn(){
+  modal(`<h2 style="font-family:Anton;font-weight:400">Sign in (demo)</h2>
+    <p class="lead">No Google in demo mode — just enter a name and an email to act as that person.</p>
+    <label class="fld"><span class="lbl">Name</span><input id="ds_name" placeholder="Your name"></label>
+    <label class="fld"><span class="lbl">Email (your identity)</span><input id="ds_email" placeholder="you@example.com"></label>
+    <div class="row"><button class="btn" id="ds_go">Sign in</button><button class="btn ghost" onclick="closeModal()">Cancel</button></div>`);
+  $("#ds_go").onclick=()=>{
+    const name=$("#ds_name").value.trim(),email=lc($("#ds_email").value.trim());
+    if(!name||!email){toast("Name and email needed");return;}
+    CURRENT_USER={id:email,email,name,avatar:""};
+    localStorage.setItem("wc_demo_user",JSON.stringify(CURRENT_USER));
+    closeModal(); if(onAuthCb)onAuthCb();
+  };
+}
+
+/* ---- Supabase adapter ---- */
+const SupaDB = {
+  async loadPool(id){
+    const {data:pool}=await sb.from('pools').select('*').eq('id',id).maybeSingle();
+    if(!pool)return null;
+    const [p,a,g,v]=await Promise.all([
+      sb.from('participants').select('*').eq('pool_id',id),
+      sb.from('assignments').select('*').eq('pool_id',id),
+      sb.from('group_results').select('*').eq('pool_id',id),
+      sb.from('advanced').select('*').eq('pool_id',id)
+    ]);
+    return assembleS(pool,p.data,a.data,g.data,v.data);
+  },
+  async myPools(){
+    const u=Auth.user();if(!u)return [];
+    const {data}=await sb.from('pools').select('id,name').contains('organiser_emails',[lc(u.email)]);
+    return data||[];
+  },
+  async createPool({id,name,config,email}){
+    const {error}=await sb.from('pools').insert({id,name,config,organiser_emails:[lc(email)]});
+    if(error)throw error;return id;
+  },
+  async addOrganiser(email){
+    const next=Array.from(new Set([...(S.config.organiserEmails||[]),lc(email)]));
+    const {error}=await sb.from('pools').update({organiser_emails:next}).eq('id',poolId);
+    if(error)throw error;
+  },
+  async joinPool(name){
+    const u=Auth.user();
+    const {data,error}=await sb.from('participants')
+      .insert({pool_id:poolId,name,user_id:u?u.id:null,email:u?lc(u.email):null}).select('id').single();
+    if(error)throw error;return data.id;
+  },
+  async addParticipant(name){const {error}=await sb.from('participants').insert({pool_id:poolId,name});if(error)throw error;},
+  async removeParticipant(id){const {error}=await sb.from('participants').delete().eq('id',id);if(error)throw error;},
+  async runDraw(arr){const {error}=await sb.rpc('run_draw',{p:poolId,a:arr});if(error)throw error;},
+  async setConfig(patch){const {error}=await sb.rpc('set_config',{p:poolId,patch});if(error)throw error;},
+  async upsertGroup(g,i,patch){const {error}=await sb.rpc('upsert_group',{p:poolId,g,i,patch});if(error)throw error;},
+  async setStage(stage,teams){
+    await sb.from('advanced').delete().eq('pool_id',poolId).eq('stage',stage);
+    if(teams.length)await sb.from('advanced').insert(teams.map(t=>({pool_id:poolId,stage,team:t})));
+  },
+  async setAdvanced(team,add,remove){
+    if(add&&add.length)await sb.from('advanced').upsert(add.map(s=>({pool_id:poolId,stage:s,team})),{onConflict:'pool_id,stage,team',ignoreDuplicates:true});
+    if(remove&&remove.length)await sb.from('advanced').delete().eq('pool_id',poolId).eq('team',team).in('stage',remove);
+  },
+  async reset(){const {error}=await sb.rpc('reset_pool',{p:poolId});if(error)throw error;},
+  async importPool(snap){
+    await this.reset();
+    const c=snap.config||{};
+    await sb.rpc('set_config',{p:poolId,patch:{header:c.header,accentColor:c.accentColor,pot:c.pot,prizes:c.prizes,scoring:c.scoring,drawDone:!!c.drawDone,signupsOpen:c.signupsOpen!==false}});
+    const idMap={};
+    const partRows=(snap.participants||[]).map(p=>{const id=crypto.randomUUID();idMap[p.id]=id;return {id,pool_id:poolId,name:p.name,user_id:p.user_id||null,email:p.email||null};});
+    if(partRows.length){const {error}=await sb.from('participants').insert(partRows);if(error)throw error;}
+    const asg=[];Object.entries(snap.assignments||{}).forEach(([pid,teams])=>{const np=idMap[pid];if(np)(teams||[]).forEach(t=>asg.push({pool_id:poolId,participant_id:np,team:t}));});
+    if(asg.length){const {error}=await sb.from('assignments').insert(asg);if(error)throw error;}
+    const gr=[];Object.entries((snap.results||{}).group||{}).forEach(([g,arr])=>(arr||[]).forEach((m,i)=>{if(m&&(m.sa!==""||m.sb!==""||m.date))gr.push({pool_id:poolId,grp:g,idx:i,score_a:m.sa===""?null:Number(m.sa),score_b:m.sb===""?null:Number(m.sb),match_date:m.date||null,source:m.source||'manual'});}));
+    if(gr.length){const {error}=await sb.from('group_results').upsert(gr,{onConflict:'pool_id,grp,idx'});if(error)throw error;}
+    const adv=[];Object.entries((snap.results||{}).advanced||{}).forEach(([st,teams])=>(teams||[]).forEach(t=>adv.push({pool_id:poolId,stage:st,team:t})));
+    if(adv.length){const {error}=await sb.from('advanced').insert(adv);if(error)throw error;}
+  },
+  subscribe(id,cb){
+    const ch=sb.channel('pool-'+id);
+    ch.on('postgres_changes',{event:'*',schema:'public',table:'pools',filter:'id=eq.'+id},cb);
+    ['participants','assignments','group_results','advanced'].forEach(tbl=>
+      ch.on('postgres_changes',{event:'*',schema:'public',table:tbl,filter:'pool_id=eq.'+id},cb));
+    ch.subscribe();
+    return ()=>{sb.removeChannel(ch);};
+  }
+};
+
+/* ---- Demo adapter (localStorage; rows shaped like Supabase) ---- */
+const DKEY="wc_demo_db_v1";
+function demoAll(){try{return JSON.parse(localStorage.getItem(DKEY)||"{}");}catch(e){return {};}}
+function demoWrite(o){localStorage.setItem(DKEY,JSON.stringify(o));window.dispatchEvent(new Event("wc-demo-change"));}
+function demoPool(o,id){return o[id]||(o[id]={pool:{id,name:"",config:{},organiser_emails:[]},participants:[],assignments:[],group:[],advanced:[]});}
+const DemoDB={
+  async loadPool(id){const o=demoAll();const p=o[id];if(!p)return null;return assembleS(p.pool,p.participants,p.assignments,p.group,p.advanced);},
+  async myPools(){const u=Auth.user();if(!u)return [];const o=demoAll();
+    return Object.values(o).filter(p=>(p.pool.organiser_emails||[]).map(lc).includes(lc(u.email))).map(p=>({id:p.pool.id,name:p.pool.name}));},
+  async createPool({id,name,config,email}){const o=demoAll();const p=demoPool(o,id);p.pool={id,name,config,organiser_emails:[lc(email)]};demoWrite(o);return id;},
+  async addOrganiser(email){const o=demoAll();const p=demoPool(o,poolId);p.pool.organiser_emails=Array.from(new Set([...(p.pool.organiser_emails||[]),lc(email)]));demoWrite(o);},
+  async joinPool(name){const u=Auth.user();const o=demoAll();const p=demoPool(o,poolId);const id=uid();
+    p.participants.push({id,name,user_id:u?u.id:null,email:u?lc(u.email):null});demoWrite(o);return id;},
+  async addParticipant(name){const o=demoAll();const p=demoPool(o,poolId);p.participants.push({id:uid(),name,user_id:null,email:null});demoWrite(o);},
+  async removeParticipant(id){const o=demoAll();const p=demoPool(o,poolId);p.participants=p.participants.filter(x=>x.id!==id);p.assignments=p.assignments.filter(a=>a.participant_id!==id);demoWrite(o);},
+  async runDraw(arr){const o=demoAll();const p=demoPool(o,poolId);p.assignments=arr.map(x=>({participant_id:x.participant_id,team:x.team}));
+    p.pool.config={...p.pool.config,drawDone:true,signupsOpen:false};demoWrite(o);},
+  async setConfig(patch){const o=demoAll();const p=demoPool(o,poolId);p.pool.config={...p.pool.config,...patch};demoWrite(o);},
+  async upsertGroup(g,i,patch){const o=demoAll();const p=demoPool(o,poolId);let row=p.group.find(r=>r.grp===g&&r.idx===i);
+    if(!row){row={grp:g,idx:i,score_a:null,score_b:null,match_date:null,pending_a:null,pending_b:null,source:"manual"};p.group.push(row);}
+    Object.keys(patch).forEach(k=>{row[k]=patch[k];});demoWrite(o);},
+  async setStage(stage,teams){const o=demoAll();const p=demoPool(o,poolId);p.advanced=p.advanced.filter(r=>r.stage!==stage).concat(teams.map(t=>({stage,team:t})));demoWrite(o);},
+  async setAdvanced(team,add,remove){const o=demoAll();const p=demoPool(o,poolId);
+    (add||[]).forEach(s=>{if(!p.advanced.some(r=>r.stage===s&&r.team===team))p.advanced.push({stage:s,team});});
+    if(remove&&remove.length)p.advanced=p.advanced.filter(r=>!(r.team===team&&remove.includes(r.stage)));demoWrite(o);},
+  async reset(){const o=demoAll();const p=demoPool(o,poolId);p.participants=[];p.assignments=[];p.group=[];p.advanced=[];
+    p.pool.config={...p.pool.config,drawDone:false,signupsOpen:true};demoWrite(o);},
+  async importPool(snap){const o=demoAll();const p=demoPool(o,poolId);const c=snap.config||{};
+    p.pool.config={...p.pool.config,header:c.header,accentColor:c.accentColor,pot:c.pot,prizes:c.prizes,scoring:c.scoring,drawDone:!!c.drawDone,signupsOpen:c.signupsOpen!==false};
+    const idMap={};p.participants=(snap.participants||[]).map(pp=>{const id=uid();idMap[pp.id]=id;return {id,name:pp.name,user_id:pp.user_id||null,email:pp.email||null};});
+    p.assignments=[];Object.entries(snap.assignments||{}).forEach(([pid,teams])=>{const np=idMap[pid];if(np)(teams||[]).forEach(t=>p.assignments.push({participant_id:np,team:t}));});
+    p.group=[];Object.entries((snap.results||{}).group||{}).forEach(([g,arr])=>(arr||[]).forEach((m,i)=>{if(m&&(m.sa!==""||m.sb!==""||m.date))p.group.push({grp:g,idx:i,score_a:m.sa===""?null:Number(m.sa),score_b:m.sb===""?null:Number(m.sb),match_date:m.date||null,pending_a:null,pending_b:null,source:m.source||'manual'});}));
+    p.advanced=[];Object.entries((snap.results||{}).advanced||{}).forEach(([st,teams])=>(teams||[]).forEach(t=>p.advanced.push({stage:st,team:t})));
+    demoWrite(o);},
+  subscribe(id,cb){const h=()=>cb();window.addEventListener("wc-demo-change",h);window.addEventListener("storage",h);
+    return ()=>{window.removeEventListener("wc-demo-change",h);window.removeEventListener("storage",h);};}
+};
+const DB = CONFIGURED ? SupaDB : DemoDB;
+
+function isOrganiser(){const u=Auth.user();return !!(u&&S&&(S.config.organiserEmails||[]).includes(lc(u.email)));}
+function myParticipant(){const u=Auth.user();if(!u||!S)return null;
+  return S.participants.find(p=>(p.user_id&&p.user_id===u.id)||(p.email&&lc(p.email)===lc(u.email)))||null;}
+function computeMe(){
+  const mp=myParticipant();
+  if(mp){meId=mp.id;setDeviceMe(mp.id);return;}
+  let q=null;try{q=new URLSearchParams(location.search).get("me");}catch(e){}
+  if(q&&S.participants.some(p=>p.id===q)){meId=q;setDeviceMe(q);return;}
+  const dm=getDeviceMe();
+  meId=(dm&&S.participants.some(p=>p.id===dm))?dm:null;
+}
+function joinedAlready(){return !!myParticipant()||!!(getDeviceMe()&&S.participants.some(p=>p.id===getDeviceMe()));}
+
+/* ============ Rendering ============ */
+function gIcon(){return '<svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.6 30.2 0 24 0 14.6 0 6.5 5.4 2.5 13.2l7.8 6.1C12.2 13.3 17.6 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.6c-.5 2.9-2.2 5.4-4.7 7l7.3 5.7c4.3-4 6.3-9.9 6.3-17.2z"/><path fill="#FBBC05" d="M10.3 28.7c-.5-1.4-.8-2.9-.8-4.7s.3-3.3.8-4.7l-7.8-6.1C.9 16.3 0 20 0 24s.9 7.7 2.5 10.8l7.8-6.1z"/><path fill="#34A853" d="M24 48c6.2 0 11.6-2.1 15.4-5.6l-7.3-5.7c-2 1.4-4.7 2.3-8.1 2.3-6.4 0-11.8-3.8-13.7-9.3l-7.8 6.1C6.5 42.6 14.6 48 24 48z"/></svg>';}
+function renderAuth(){
+  const el=$("#authArea");const u=Auth.user();
+  if(!u){el.innerHTML=`<button class="btn white sm gbtn" id="a_signin">${gIcon()} Sign in</button>`;
+    $("#a_signin").onclick=()=>Auth.signIn();return;}
+  el.innerHTML=`<span class="user-chip">${u.avatar?`<img class="avatar" src="${esc(u.avatar)}" alt="">`:`<span class="avatar" aria-hidden="true"></span>`}
+    <span>${esc(u.name||u.email)}</span></span>
+    <button class="btn ghost sm" id="a_signout">Sign out</button>`;
+  $("#a_signout").onclick=()=>Auth.signOut();
+}
+function header(){
+  $("#evtName").textContent = (S&&S.config.header) || "World Cup 2026 Sweepstake";
+  $("#evtSub").textContent = S ? (S.config.pot?("Prize pot: "+S.config.pot):"Office sweepstake") : "";
+  document.documentElement.style.setProperty("--accent",(S&&S.config.accentColor)||"#22d37a");
+  const pill=$("#statePill");
+  if(!S){pill.textContent="—";pill.className="pill";}
+  else if(!S.config.drawDone){pill.textContent=S.config.signupsOpen?"Signups open":"Signups closed";pill.className="pill";}
+  else {const cs=currentStageIndex();pill.textContent=cs?STAGES[cs-1].label+" stage":"Group stage";pill.className="pill live";}
+  renderAuth();
+}
+function tabsBar(){
+  const t=$("#tabs");const items=[];
+  if(!S.config.drawDone)items.push(["join","Join"]);
+  items.push(["board","Leaderboard"]);
+  if(S.config.drawDone)items.push(["mine","My teams"]);
+  items.push(["fixtures","Fixtures"]);
+  if(S.config.drawDone)items.push(["alive","Teams in"]);
+  if(S.config.drawDone)items.push(["bracket","Progression"]);
+  items.push(["rules","How it works"]);
+  items.push(["org", isOrganiser()?"Organiser ✓":"Organiser"]);
+  t.innerHTML=items.map(([k,l])=>`<button data-t="${k}" class="${tab===k?'on':''}" ${tab===k?'aria-current="page"':''}>${l}</button>`).join("");
+  t.querySelectorAll("button").forEach(b=>b.onclick=()=>{tab=b.dataset.t;render();});
+}
+function render(){
+  header();
+  if(!S){return;}            // landing / missing-pool screens set their own view
+  tabsBar();
+  const v=$("#view");
+  if(tab==="join"&&S.config.drawDone)tab="board";
+  if(tab==="join")v.innerHTML=viewJoin();
+  else if(tab==="board")v.innerHTML=viewBoard();
+  else if(tab==="mine")v.innerHTML=viewMine();
+  else if(tab==="fixtures")v.innerHTML=viewFixtures();
+  else if(tab==="alive")v.innerHTML=viewAlive();
+  else if(tab==="bracket")v.innerHTML=viewBracket();
+  else if(tab==="rules")v.innerHTML=viewRules();
+  else if(tab==="org")v.innerHTML=viewOrg();
+  wire();
+}
+
+/* ---- Landing (no pool) and missing-pool ---- */
+async function renderLanding(){
+  S=null;poolId=null;header();$("#tabs").innerHTML="";
+  const u=Auth.user();
+  let mine="";
+  if(u){
+    const pools=await DB.myPools();
+    mine=`<div class="card"><h2>Your sweepstakes</h2>${pools.length?
+      pools.map(p=>`<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:9px 0">
+        <span>${esc(p.name||p.id)}</span><a class="btn ghost sm" href="?pool=${encodeURIComponent(p.id)}">Open</a></div>`).join("")
+      :'<div class="empty">None yet — create one below.</div>'}</div>`;
+  }
+  $("#view").innerHTML=`
+    <div class="card"><h2>World Cup 2026 Sweepstake</h2>
+      <p class="lead">Run a sweepstake for your office or group: everyone joins, all 48 teams are drawn out fairly, and a live leaderboard runs through the tournament.</p>
+      ${u?"":`<p class="lead">Sign in to create one, or open a sweepstake from its share link.</p>
+        <button class="btn white gbtn" id="l_signin">${gIcon()} Sign in with Google</button>`}
+    </div>
+    ${mine}
+    ${u?`<div class="card"><h2>Create a sweepstake</h2>
+      <div class="grid2">
+        <label class="fld"><span class="lbl">Name</span><input id="np_name" placeholder="e.g. ecoPortal World Cup Sweepstake" value="World Cup 2026 Sweepstake"></label>
+        <label class="fld"><span class="lbl">Accent colour</span><input type="color" id="np_col" value="#22d37a"></label>
+        <label class="fld"><span class="lbl">Prize pot (optional)</span><input id="np_pot" placeholder="e.g. $5 each, winner takes the pot"></label>
+      </div>
+      <button class="btn" id="np_go">Create &amp; open</button>
+      <p class="note">You'll be the organiser (${esc(u.email)}). Share the link afterwards so others can join.</p></div>`:""}`;
+  if($("#l_signin"))$("#l_signin").onclick=()=>Auth.signIn();
+  if($("#np_go"))$("#np_go").onclick=async()=>{
+    const u2=Auth.user();if(!u2){toast("Sign in first");return;}
+    const name=$("#np_name").value.trim()||"World Cup 2026 Sweepstake";
+    const cfg=Object.assign(blankConfig(),{header:name,accentColor:$("#np_col").value,pot:$("#np_pot").value.trim()});
+    const id=slug(name)+"-"+uid().slice(0,5);
+    try{await DB.createPool({id,name,config:cfg,email:u2.email});location.search="?pool="+encodeURIComponent(id);}
+    catch(e){toast("Could not create pool");console.error(e);}
+  };
+}
+function renderMissingPool(id){
+  S=null;header();$("#tabs").innerHTML="";
+  $("#view").innerHTML=`<div class="card"><h2>Sweepstake not found</h2>
+    <p class="lead">No sweepstake exists at <code>?pool=${esc(id)}</code>. Check the link, or go to the start to create or open one.</p>
+    <a class="btn ghost" href="${location.href.split('?')[0]}">Go to start</a></div>`;
+}
+
+/* ---- Views ---- */
+function viewJoin(){
+  const u=Auth.user();
+  let action;
+  if(!S.config.signupsOpen)action=`<p class="lead">Signups are closed. Waiting for the organiser to run the draw.</p>`;
+  else if(joinedAlready()){const meP=myParticipant()||S.participants.find(p=>p.id===getDeviceMe());
+    action=`<div class="good">You're in as <b>${esc(meP?meP.name:"")}</b>. Teams are assigned when the organiser runs the draw — watch the <b>My teams</b> tab.</div>`;}
+  else{
+    action=`<div class="row"><input id="j_name" aria-label="Your name" placeholder="Your name" value="${esc(u?(u.name||""):"")}" style="max-width:280px"><button class="btn" id="j_go">Join${u?" the draw":" as guest"}</button></div>`;
+    if(!u)action+=`<p class="note">No account needed. Or <button class="btn ghost sm gbtn" id="j_signin">${gIcon()} Sign in with Google</button> so your teams follow you on any device automatically.</p>`;
+  }
+  const list=S.participants.map(p=>`<span class="team">${esc(p.name)}</span>`).join("")||`<span class="empty">No one yet. Be first.</span>`;
+  return `<div class="card"><h2>Join the sweepstake</h2>${action}
+    <div style="margin-top:16px"><div class="note">In the draw (${S.participants.length})</div><div style="margin-top:8px">${list}</div></div></div>
+    <div class="card"><h2>The deal</h2><p class="lead">All 48 teams are shared out as evenly as possible, with the strong teams spread fairly. Points build through the tournament. See "How it works".</p></div>`;
+}
+function viewBoard(){
+  if(!S.participants.length)return `<div class="card"><div class="empty">No participants yet.</div></div>`;
+  const rows=standings();const last=rows.length>1?rows[rows.length-1].id:null;const champ=(S.results.advanced.W||[])[0];
+  const trs=rows.map((r,i)=>{
+    const top=i===0?"top":"";const spoon=(r.id===last&&S.config.drawDone)?"spoon":"";const me=r.id===meId?"me-row":"";
+    return `<tr class="${me} ${spoon}"><td><span class="rank ${top}">${i+1}</span></td>
+      <td>${esc(r.name)}${r.id===meId?' <span class="note">(you)</span>':''}${i===0&&r.pts>0?' 👑':''}${spoon?' 🥄':''}</td>
+      <td class="num">${r.alive}/${r.teams}</td><td class="num"><span class="pts">${r.pts}</span></td></tr>`;
+  }).join("");
+  return `<div class="card"><h2>Leaderboard</h2>
+    <p class="lead">${S.config.drawDone?(champ?`Champions: ${flag(champ)} ${esc(champ)}. Final standings.`:"Live standings. Updates as results go in."):"Draw not run yet."}</p>
+    <div class="tablewrap"><table><thead><tr><th></th><th>Player</th><th class="num">Teams in</th><th class="num">Points</th></tr></thead><tbody>${trs}</tbody></table></div>
+    <div class="row" style="margin-top:14px"><button class="btn ghost sm" id="b_share">Copy invite link</button></div></div>`;
+}
+function viewMine(){
+  const u=Auth.user();
+  if(!meId){
+    return `<div class="card"><h2>My teams</h2>
+      <p class="lead">You haven't joined this sweepstake yet${S.config.drawDone?" (and the draw is already done)":""}.${S.config.signupsOpen?' Head to the <b>Join</b> tab — no account needed.':''}</p>
+      ${!u?`<button class="btn white gbtn" id="m_signin">${gIcon()} Sign in with Google</button>`:""}</div>`;
+  }
+  const me=S.participants.find(p=>p.id===meId);
+  const guest=me&&!me.user_id;
+  const teams=S.assignments[meId]||[];
+  const rows=standings();const rank=rows.findIndex(r=>r.id===meId)+1;
+  const upcoming=teams.flatMap(t=>teamFixtures(t).filter(f=>!f.score)).sort((a,b)=>a.sort-b.sort)[0];
+  const blocks=teams.map(t=>{
+    const fx=teamFixtures(t).map(f=>{const opp=f.t0===t?f.t1:f.t0;const res=f.score?` <span class="pts" style="font-size:13px">${f.score}</span>`:"";
+      return `<div style="font-size:13px;color:var(--ink-dim);padding:2px 0">${f.dayLabel}${f.timeLabel?" · "+f.timeLabel:""} v ${flag(opp)} ${esc(opp)}${res}</div>`;}).join("");
+    return `<div style="margin-bottom:12px">${teamChip(t)} <span class="note">${teamPoints(t)} pts</span>${fx}</div>`;
+  }).join("")||'<div class="empty">No teams yet — waiting on the draw.</div>';
+  return `<div class="card"><h2>${esc(me.name)}</h2>
+    <div class="stat">
+      <div class="b"><div class="n">${playerPoints(meId)}</div><div class="l">Points</div></div>
+      <div class="b"><div class="n">#${rank}</div><div class="l">Position</div></div>
+      <div class="b"><div class="n">${teams.filter(t=>!isOut(t)).length}/${teams.length}</div><div class="l">Teams still in</div></div>
+    </div>
+    ${upcoming?`<div class="good" style="margin-top:14px">Next up: ${flag(upcoming.t0)} ${esc(upcoming.t0)} v ${esc(upcoming.t1)} ${flag(upcoming.t1)} &middot; ${upcoming.dayLabel}${upcoming.timeLabel?", "+upcoming.timeLabel:""}</div>`:""}
+    <div style="margin-top:14px">${blocks}</div>
+    <div class="row"><button class="btn ghost sm" id="m_share">Copy invite link</button>${guest?`<button class="btn ghost sm" id="m_pers">Copy my personal link</button>`:""}</div>
+    <p class="note">${guest?"You joined as a guest — bookmark your personal link to return on any device, or sign in with Google to sync automatically.":"Signed in, your teams follow you on any device — no link needed."}</p></div>`;
+}
+function viewFixtures(){
+  const all=allFixtures().sort((a,b)=>a.sort-b.sort||a.g.localeCompare(b.g));
+  const owner=t=>{const e=Object.entries(S.assignments).find(([id,arr])=>arr.includes(t));return e?(S.participants.find(p=>p.id===e[0])||{}).name:"";};
+  const tag=t=>S.config.drawDone&&owner(t)?` <span class="grp">${esc(owner(t))}</span>`:"";
+  const line=f=>{const res=f.score?`<span class="pts" style="font-size:14px">${f.score}</span>`:`<span class="note">${f.timeLabel||"vs"}</span>`;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13.5px">
+      <span class="grp" style="width:18px">${f.g}</span>
+      <span style="flex:1;text-align:right">${esc(f.t0)}${tag(f.t0)} ${flag(f.t0)}</span>
+      <span style="width:72px;text-align:center">${res}</span>
+      <span style="flex:1">${flag(f.t1)} ${esc(f.t1)}${tag(f.t1)}</span></div>`;};
+  let html="",curKey="";
+  all.forEach(f=>{if(f.dayKey!==curKey){curKey=f.dayKey;html+=`<div style="margin:14px 0 4px;font-weight:700;font-size:13px;color:var(--accent)">${f.dayLabel}</div>`;}html+=line(f);});
+  return `<div class="card"><h2>Fixtures</h2>
+    <p class="lead">Group stage. Kickoff times shown in your timezone${TZNAME?` (${esc(TZNAME)})`:""}.</p>${html}
+    <p class="note">Knockouts: Round of 32 (28 Jun–3 Jul), Round of 16 (4–7 Jul), Quarter-finals (9–11 Jul), Semi-finals (14–15 Jul), Third place (18 Jul), Final (19 Jul).</p></div>`;
+}
+function viewAlive(){
+  const alive=TEAMS.map(t=>t.id).filter(t=>!isOut(t));
+  const out=TEAMS.map(t=>t.id).filter(t=>isOut(t));
+  const owner=t=>{const e=Object.entries(S.assignments).find(([id,arr])=>arr.includes(t));return e?(S.participants.find(p=>p.id===e[0])||{}).name:"";};
+  const chip=t=>`<span class="team">${flag(t)} ${esc(t)} <span class="grp">${owner(t)||groupOf(t)}</span></span>`;
+  return `<div class="card"><h2>Teams still in (${alive.length})</h2>
+    <p class="lead">Chip shows the owner once the draw is done.</p>
+    <div>${alive.map(chip).join("")||'<span class="empty">None</span>'}</div></div>
+    <div class="card"><h2>Knocked out (${out.length})</h2><div>${out.map(t=>teamChip(t)).join("")||'<span class="empty">None yet</span>'}</div></div>`;
+}
+function viewBracket(){
+  const cols=STAGES.map(s=>{const teams=(S.results.advanced[s.key]||[]);
+    return `<div class="card" style="margin:0"><h2 style="font-size:15px">${s.label}</h2>
+      <p class="note" style="margin-top:0">+${s.pts} pts &middot; ${teams.length}/${s.size}</p>
+      <div>${teams.map(t=>teamChip(t)).join("")||'<span class="empty" style="padding:8px">TBD</span>'}</div></div>`;}).join("");
+  return `<div class="grid2">${cols}</div>`;
+}
+function viewRules(){
+  const sc=S.config.scoring;
+  return `<div class="card"><h2>How it works</h2>
+    <p class="lead">A classic sweepstake: teams are drawn at random, no skill, no swaps. A points leaderboard runs on top so everyone has something to follow even after their teams go out.</p>
+    <h2 style="font-size:15px;margin-top:14px">The draw</h2>
+    <p class="lead">All 48 teams are shared out as evenly as possible across everyone signed up. Strong teams are spread so no single person scoops all the favourites. Once drawn, teams are permanent.</p>
+    <h2 style="font-size:15px">Scoring (per team you own)</h2>
+    <div class="tablewrap"><table><tbody>
+      <tr><td>Group win</td><td class="num">${sc.win} pts</td></tr>
+      <tr><td>Group draw</td><td class="num">${sc.draw} pts</td></tr>
+      ${STAGES.map(s=>`<tr><td>Reach ${s.label}</td><td class="num">+${s.pts} pts</td></tr>`).join("")}
+    </tbody></table></div>
+    <p class="note">Progression bonuses stack, so a team that goes all the way earns every milestone along the way. Your score is the total across all your teams.</p>
+    ${S.config.pot?`<h2 style="font-size:15px">Prizes</h2><p class="lead">Pot: ${esc(S.config.pot)}</p>
+      ${S.config.prizes.first?`<p class="note">1st: ${esc(S.config.prizes.first)}</p>`:""}
+      ${S.config.prizes.second?`<p class="note">2nd: ${esc(S.config.prizes.second)}</p>`:""}
+      ${S.config.prizes.spoon?`<p class="note">Wooden spoon (last): ${esc(S.config.prizes.spoon)}</p>`:""}`:""}</div>`;
+}
+function viewOrg(){
+  const u=Auth.user();
+  if(!u)return `<div class="card"><h2>Organiser</h2><p class="lead">Sign in to manage this sweepstake.</p>
+    <button class="btn white gbtn" id="o_signin">${gIcon()} Sign in with Google</button></div>`;
+  if(!isOrganiser())return `<div class="card"><h2>Organiser</h2>
+    <p class="lead">You're signed in as ${esc(u.email)}, but you're not an organiser of this sweepstake. Ask an organiser to add your email.</p></div>`;
+
+  let html=`<div class="card"><h2>Signups & draw</h2>`;
+  if(!S.config.drawDone){
+    html+=`<div class="row" style="margin-bottom:10px">
+      <button class="btn ghost sm" id="o_toggle">${S.config.signupsOpen?"Close signups":"Open signups"}</button>
+      <button class="btn ghost sm" id="o_add">Add a person manually</button>
+      <button class="btn ghost sm" id="o_share">Copy invite link</button></div>
+      <div style="margin-bottom:12px">${S.participants.map(p=>`<span class="team">${esc(p.name)} <a href="#" data-rm="${p.id}" aria-label="Remove ${esc(p.name)}" style="color:var(--bad);text-decoration:none">&times;</a></span>`).join("")||'<span class="empty">No one yet</span>'}</div>
+      <div class="warn">Run the draw once everyone has joined. This assigns all 48 teams and closes signups. It can only be undone by reset.</div>
+      <button class="btn" id="o_draw" ${S.participants.length<1?"disabled":""}>Run the draw (${S.participants.length} in)</button>`;
+  } else {
+    html+=`<p class="lead">Draw complete. ${S.participants.length} players, 48 teams assigned.</p>
+      <button class="btn ghost sm" id="o_share">Copy invite link</button>`;
+  }
+  html+=`</div>`;
+
+  if(S.config.drawDone){
+    html+=`<div class="card"><h2>Group results</h2><p class="lead">Enter scores after each round. Points update instantly. Auto-fetched scores (if you set up the API) show as suggestions to confirm.</p>`;
+    Object.keys(GROUPS).forEach(g=>{
+      html+=`<fieldset class="grp-set"><legend>Group ${g}</legend>`;
+      GROUP_COMBOS.forEach((c,i)=>{
+        const a=GROUPS[g][c[0]],b=GROUPS[g][c[1]];
+        const m=(S.results.group[g]&&S.results.group[g][i])||{sa:"",sb:"",pa:"",pb:"",source:""};
+        const dval=fxDate(g,i);
+        const pend=(m.pa!==""&&m.pb!==""&&m.source==="auto"&&(m.sa===""||m.sb===""))
+          ? `<span class="pendtag">API: ${m.pa}–${m.pb} <a href="#" data-cfm-g="${g}" data-cfm-i="${i}" data-pa="${m.pa}" data-pb="${m.pb}">confirm</a></span>`:"";
+        html+=`<div class="grouprow"><div class="vs">${flag(a)} ${esc(a)} <span class="note">v</span> ${esc(b)} ${flag(b)}${pend}</div>
+          <input class="gd" type="date" aria-label="Date ${esc(a)} v ${esc(b)}" data-gd="${g}" data-i="${i}" value="${dval}">
+          <input type="number" min="0" inputmode="numeric" aria-label="${esc(a)} score" data-g="${g}" data-i="${i}" data-s="a" value="${m.sa}" placeholder="-">
+          <input type="number" min="0" inputmode="numeric" aria-label="${esc(b)} score" data-g="${g}" data-i="${i}" data-s="b" value="${m.sb}" placeholder="-"></div>`;
+      });
+      html+=`</fieldset>`;
+    });
+    html+=`</div>`;
+
+    html+=`<div class="card"><h2>Knockout progression</h2>
+      <p class="lead">Tick the teams that reached each stage; bonuses apply automatically.</p>
+      <button class="btn ghost sm" id="o_autoR32">Auto-qualify Round of 32 from group results</button>
+      <p class="note">Fills R32 with the 12 group winners, 12 runners-up and 8 best third-placed teams (needs all group scores in). You can still adjust by hand.</p>`;
+    STAGES.forEach((s,si)=>{
+      const prev=si===0?TEAMS.map(t=>t.id):(S.results.advanced[STAGES[si-1].key]||[]);
+      const sel=S.results.advanced[s.key]||[];
+      html+=`<details ${si===0?"open":""} style="margin-bottom:8px"><summary style="cursor:pointer;padding:6px 0;font-weight:600">${s.label} — ${sel.length}/${s.size} (+${s.pts})</summary>
+        <div class="kogrid">${prev.map(t=>`<label class="ko-team ${sel.includes(t)?'sel':''}"><input type="checkbox" data-ko="${s.key}" value="${esc(t)}" ${sel.includes(t)?"checked":""}> ${flag(t)} ${esc(t)}</label>`).join("")}</div></details>`;
+    });
+    html+=`</div>`;
+  }
+
+  html+=`<div class="card"><h2>Event & prizes</h2>
+    <div class="grid2">
+      <label class="fld"><span class="lbl">Event title</span><input id="c_header" value="${esc(S.config.header)}"></label>
+      <label class="fld"><span class="lbl">Accent colour</span><input type="color" id="c_col" value="${S.config.accentColor}"></label>
+      <label class="fld"><span class="lbl">Prize pot</span><input id="c_pot" value="${esc(S.config.pot)}"></label>
+      <label class="fld"><span class="lbl">1st place prize</span><input id="c_p1" value="${esc(S.config.prizes.first)}"></label>
+      <label class="fld"><span class="lbl">2nd place prize</span><input id="c_p2" value="${esc(S.config.prizes.second)}"></label>
+      <label class="fld"><span class="lbl">Wooden spoon (last)</span><input id="c_ps" value="${esc(S.config.prizes.spoon)}"></label>
+    </div>
+    <button class="btn" id="c_save">Save event details</button></div>`;
+
+  html+=`<div class="card"><h2>Organisers</h2>
+    <p class="lead">People who can manage this sweepstake (by email). ${esc((S.config.organiserEmails||[]).join(", "))}</p>
+    <div class="row"><input id="org_email" aria-label="Co-organiser email" placeholder="add co-organiser email" style="max-width:280px"><button class="btn ghost sm" id="org_add">Add organiser</button></div></div>`;
+
+  html+=`<div class="card"><h2>Backup & reset</h2>
+    <p class="lead">Export a backup any time. Reset wipes participants, the draw and all results (keeps your settings).</p>
+    <div class="row"><button class="btn ghost sm" id="d_exp">Export backup</button>
+      <button class="btn ghost sm" id="d_imp">Import backup</button>
+      <button class="btn danger sm" id="d_reset">Reset everything</button></div></div>`;
+  return html;
+}
+
+/* ============ Wiring ============ */
+async function refresh(){if(!poolId)return;try{const ns=await DB.loadPool(poolId);if(ns){S=ns;computeMe();render();}}catch(e){console.error(e);}}
+async function guard(fn,okMsg){try{await fn();if(okMsg)toast(okMsg);await refresh();}catch(e){console.error(e);toast(e&&e.message?("Error: "+e.message):"Something went wrong");}}
+function copyText(t,msg){if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(()=>toast(msg||"Copied")).catch(()=>showLink(t));else showLink(t);}
+function shareLink(){copyText(poolLink(),"Invite link copied");}
+function showLink(link){modal(`<h2 style="font-family:Anton;font-weight:400">Invite link</h2><p class="lead">Share this so people can join.</p>
+  <label class="fld"><input readonly value="${esc(link)}" onclick="this.select()"></label><div class="row"><button class="btn ghost" onclick="closeModal()">Close</button></div>`);}
+
+function wire(){
+  if($("#o_signin"))$("#o_signin").onclick=()=>Auth.signIn();
+  if($("#m_signin"))$("#m_signin").onclick=()=>Auth.signIn();
+  if($("#j_signin"))$("#j_signin").onclick=()=>Auth.signIn();
+  if($("#b_share"))$("#b_share").onclick=shareLink;
+  if($("#m_share"))$("#m_share").onclick=shareLink;
+  if($("#m_pers"))$("#m_pers").onclick=()=>copyText(meLink(),"Personal link copied");
+  if($("#o_share"))$("#o_share").onclick=shareLink;
+
+  const jgo=$("#j_go");if(jgo)jgo.onclick=async()=>{
+    const n=$("#j_name").value.trim();if(!n)return;
+    const signed=!!Auth.user();
+    try{const id=await DB.joinPool(n);setDeviceMe(id);toast("You're in!");await refresh();}
+    catch(e){console.error(e);toast(e&&e.message?("Error: "+e.message):"Could not join");return;}
+    const label=signed?"Invite link":"Your personal link";
+    const val=signed?poolLink():meLink();
+    const blurb=signed?"Signed in, your teams follow you on any device. Share the invite link so others can join."
+      :"No account, so bookmark this personal link — it brings you back to your teams on any device. (Or sign in with Google later to sync automatically.)";
+    modal(`<h2 style="font-family:Anton;font-weight:400">You're in, ${esc(n)}</h2>
+      <p class="lead">${blurb}</p>
+      <label class="fld"><span class="lbl">${label}</span><input id="jl" readonly value="${esc(val)}" onclick="this.select()"></label>
+      <div class="row"><button class="btn" id="jl_copy">Copy link</button><button class="btn ghost" onclick="closeModal()">Done</button></div>`);
+    $("#jl_copy").onclick=()=>copyText(val,signed?"Invite link copied":"Personal link copied");
+  };
+
+  if($("#o_toggle"))$("#o_toggle").onclick=()=>guard(async()=>{await DB.setConfig({signupsOpen:!S.config.signupsOpen});});
+  if($("#o_add"))$("#o_add").onclick=()=>{
+    modal(`<h2 style="font-family:Anton;font-weight:400">Add person</h2>
+      <label class="fld"><span class="lbl">Name</span><input id="ap_n" placeholder="Name"></label>
+      <div class="row"><button class="btn" id="ap_go">Add</button><button class="btn ghost" onclick="closeModal()">Cancel</button></div>`);
+    $("#ap_go").onclick=()=>{const n=$("#ap_n").value.trim();if(!n)return;closeModal();guard(async()=>{await DB.addParticipant(n);},"Added");};
+  };
+  document.querySelectorAll("[data-rm]").forEach(a=>a.onclick=ev=>{ev.preventDefault();guard(async()=>{await DB.removeParticipant(a.dataset.rm);});});
+  if($("#o_draw"))$("#o_draw").onclick=()=>{
+    if(S.participants.length<1){toast("Need at least one player");return;}
+    guard(async()=>{await DB.runDraw(computeDraw());},"Draw complete!").then(()=>{tab="board";render();});
+  };
+
+  document.querySelectorAll("input[data-g]").forEach(inp=>inp.onchange=()=>{
+    const g=inp.dataset.g,i=+inp.dataset.i,s=inp.dataset.s;const v=inp.value.trim();
+    const patch={};patch[s==="a"?"score_a":"score_b"]=v===""?null:Number(v);
+    guard(async()=>{await DB.upsertGroup(g,i,patch);},"Saved");
+  });
+  document.querySelectorAll("input[data-gd]").forEach(inp=>inp.onchange=()=>{
+    const g=inp.dataset.gd,i=+inp.dataset.i;
+    guard(async()=>{await DB.upsertGroup(g,i,{match_date:inp.value||null});},"Date saved");
+  });
+  document.querySelectorAll("[data-cfm-g]").forEach(a=>a.onclick=ev=>{ev.preventDefault();
+    const g=a.dataset.cfmG,i=+a.dataset.cfmI,pa=Number(a.dataset.pa),pb=Number(a.dataset.pb);
+    guard(async()=>{await DB.upsertGroup(g,i,{score_a:pa,score_b:pb,source:"auto-confirmed",pending_a:null,pending_b:null});},"Confirmed");
+  });
+  document.querySelectorAll("input[data-ko]").forEach(cb=>cb.onchange=()=>{
+    const k=cb.dataset.ko,t=cb.value;const ki=STAGES.findIndex(z=>z.key===k);
+    if(cb.checked)guard(async()=>{await DB.setAdvanced(t,[k],[]);});
+    else{const later=STAGES.slice(ki).map(s=>s.key);guard(async()=>{await DB.setAdvanced(t,[],later);});}
+  });
+  if($("#o_autoR32"))$("#o_autoR32").onclick=()=>{
+    const r=autoQualifyR32();if(!r.ok){toast(r.msg);return;}
+    guard(async()=>{await DB.setStage("R32",r.teams);},"Round of 32 set (32 teams)");
+  };
+
+  if($("#c_save"))$("#c_save").onclick=()=>guard(async()=>{
+    await DB.setConfig({header:$("#c_header").value.trim()||S.config.header,accentColor:$("#c_col").value,
+      pot:$("#c_pot").value.trim(),prizes:{first:$("#c_p1").value.trim(),second:$("#c_p2").value.trim(),spoon:$("#c_ps").value.trim()}});
+  },"Saved");
+  if($("#org_add"))$("#org_add").onclick=()=>{const e=lc($("#org_email").value.trim());if(!e){toast("Enter an email");return;}
+    guard(async()=>{await DB.addOrganiser(e);},"Organiser added");};
+
+  if($("#d_exp"))$("#d_exp").onclick=()=>{
+    const blob=new Blob([JSON.stringify(S,null,2)],{type:"application/json"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+    a.download=(S.config.header||"sweepstake").replace(/\W+/g,"_")+"_backup.json";a.click();
+  };
+  if($("#d_imp"))$("#d_imp").onclick=()=>{
+    const i=document.createElement("input");i.type="file";i.accept=".json";
+    i.onchange=()=>{const f=i.files[0];if(!f)return;const r=new FileReader();
+      r.onload=()=>{let obj;try{obj=JSON.parse(r.result);}catch(e){toast("Bad file");return;}
+        if(!obj||!obj.config||!obj.participants){toast("Not a sweepstake backup");return;}
+        modal(`<h2 style="font-family:Anton;font-weight:400">Import backup?</h2>
+          <p class="lead">This replaces everyone and all results in <b>this</b> sweepstake with the backup's contents. Export the current state first if unsure.</p>
+          <div class="row"><button class="btn danger" id="im_go">Yes, import</button><button class="btn ghost" onclick="closeModal()">Cancel</button></div>`);
+        $("#im_go").onclick=()=>{closeModal();guard(async()=>{await DB.importPool(obj);},"Imported").then(()=>{tab="board";render();});};
+      };r.readAsText(f);};
+    i.click();
+  };
+  if($("#d_reset"))$("#d_reset").onclick=()=>{
+    modal(`<h2 style="font-family:Anton;font-weight:400">Reset everything?</h2>
+      <p class="lead">This wipes participants, the draw and all results. Export a backup first if unsure.</p>
+      <div class="row"><button class="btn danger" id="rs_go">Yes, reset</button><button class="btn ghost" onclick="closeModal()">Cancel</button></div>`);
+    $("#rs_go").onclick=()=>{closeModal();guard(async()=>{await DB.reset();},"Reset done").then(()=>{tab="org";render();});};
+  };
+}
+
+/* ============ Boot ============ */
+let booting=false;
+async function boot(){
+  if(booting)return;booting=true;
+  try{
+    if(unsub){unsub();unsub=null;}
+    poolId=new URLSearchParams(location.search).get("pool");
+    if(!poolId){await renderLanding();return;}
+    S=await DB.loadPool(poolId);
+    if(!S){renderMissingPool(poolId);return;}
+    computeMe();
+    if(S.config.drawDone){tab=(meId&&S.assignments[meId])?"mine":"board";}else{tab="join";}
+    render();
+    let timer=null;
+    unsub=DB.subscribe(poolId,()=>{clearTimeout(timer);timer=setTimeout(refresh,250);});
+  } finally { booting=false; }
+}
+(async function(){
+  if(!CONFIGURED){const b=$("#demobar");b.hidden=false;
+    b.innerHTML='Demo mode — no backend configured, data stays in this browser only. See SETUP.md to go live with Supabase.';}
+  await Auth.init();
+  Auth.onChange(()=>{boot();});
+  await boot();
+  // Fallback poll in case realtime is unavailable.
+  setInterval(()=>{if(!poolId)return;if($("#scrim").classList.contains("show"))return;if(isOrganiser())return;refresh();},30000);
+})();
+</script>
+</body>
+</html>
