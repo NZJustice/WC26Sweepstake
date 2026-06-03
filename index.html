@@ -155,6 +155,12 @@
     .lbteam{border:none;background:transparent;padding:0;font-size:12px}
     .lbteams{gap:3px 11px;margin-top:7px}
   }
+  .pip{display:inline-block;width:10px;height:10px;border-radius:2px;margin:0 1px;vertical-align:middle;background:var(--ink-faint)}
+  .pip.W{background:var(--accent)} .pip.D{background:var(--ink-faint)} .pip.L{background:var(--bad)}
+  .rec{font-family:'Anton',sans-serif;font-size:18px;letter-spacing:.5px;white-space:nowrap}
+  .rec .w{color:var(--accent)} .rec .d{color:var(--ink-dim)} .rec .l{color:var(--bad)}
+  .toggle{display:flex;align-items:flex-start;gap:9px;cursor:pointer;font-size:13px;color:var(--ink-dim)}
+  .toggle input{width:auto;margin-top:3px;accent-color:var(--accent)}
 
   .flag{width:22px;height:auto;border-radius:2px;vertical-align:middle;
     box-shadow:0 0 0 1px rgba(0,0,0,.35);background:var(--panel-2)}
@@ -427,6 +433,19 @@ function groupPoints(t){
 }
 function progressionPoints(t){const st=stageReached(t);let p=0;for(let i=0;i<st;i++)p+=STAGES[i].pts;return p;}
 function teamPoints(t){return groupPoints(t)+progressionPoints(t);}
+/* ---- Simple mode: wins/losses form instead of points (display only) ---- */
+function matchResultFor(team,g,i){
+  const m=S.results.group[g]&&S.results.group[g][i];
+  if(!m||m.sa===""||m.sb===""||m.sa==null||m.sb==null)return null;
+  const tt=GROUPS[g],a=tt[GROUP_COMBOS[i][0]],b=tt[GROUP_COMBOS[i][1]];
+  if(team!==a&&team!==b)return null;
+  const mine=(team===a)?+m.sa:+m.sb, opp=(team===a)?+m.sb:+m.sa;
+  return mine>opp?'W':(mine===opp?'D':'L');
+}
+function teamPips(t){const g=groupOf(t);return GROUP_COMBOS.map((c,i)=>matchResultFor(t,g,i)).filter(Boolean).map(r=>`<span class="pip ${r}"></span>`).join("");}
+function playerForm(id){const res=[];(S.assignments[id]||[]).forEach(team=>{const g=groupOf(team);GROUP_COMBOS.forEach((c,i)=>{const r=matchResultFor(team,g,i);if(r)res.push(r);});});return {w:res.filter(x=>x==='W').length,d:res.filter(x=>x==='D').length,l:res.filter(x=>x==='L').length};}
+function recordHTML(f){return `<span class="rec"><span class="w">${f.w}</span>-<span class="d">${f.d}</span>-<span class="l">${f.l}</span></span>`;}
+function championOwnerId(){const champ=(S.results.advanced.W||[])[0];if(!champ)return null;const e=Object.entries(S.assignments).find(([id,arr])=>arr.includes(champ));return e?e[0]:null;}
 function playerPoints(id){return (S.assignments[id]||[]).reduce((s,t)=>s+teamPoints(t),0);}
 function standings(){
   const rows=S.participants.map(p=>({id:p.id,name:p.name,pts:playerPoints(p.id),
@@ -784,24 +803,32 @@ function viewJoin(){
 }
 function viewBoard(){
   if(!S.participants.length)return `<div class="card"><div class="empty">No participants yet.</div></div>`;
+  const simple=!!S.config.simpleMode;
   const rows=standings();const last=rows.length>1?rows[rows.length-1].id:null;const champ=(S.results.advanced.W||[])[0];
+  const champOwner=simple?championOwnerId():null;
   const cards=rows.map((r,i)=>{
     const top=i===0?"top":"";const spoon=(r.id===last&&S.config.drawDone)?"spoon":"";const me=r.id===meId?"me":"";
+    const crown=simple?(r.id===champOwner?' 🏆':''):(i===0&&r.pts>0?' 👑':'');
     const strip=(S.assignments[r.id]||[]).slice()
       .sort((a,b)=>(isOut(a)-isOut(b))||(teamPoints(b)-teamPoints(a))||a.localeCompare(b))
-      .map(t=>`<span class="lbteam ${isOut(t)?'out':''}" title="${esc(t)} · ${teamPoints(t)} pts">${flag(t)} ${esc(t)}</span>`).join("");
+      .map(t=>`<span class="lbteam ${isOut(t)?'out':''}" title="${esc(t)}${simple?'':' · '+teamPoints(t)+' pts'}">${flag(t)} ${esc(t)}${simple?' '+teamPips(t):''}</span>`).join("");
+    const metric=simple?recordHTML(playerForm(r.id)):`<span class="pts">${r.pts}</span>`;
     return `<div class="lbcard ${me} ${spoon}">
       <div class="lbtop">
         <span class="rank ${top}">${i+1}</span>
-        <span class="lbname">${esc(r.name)}${r.id===meId?' <span class="note">(you)</span>':''}${i===0&&r.pts>0?' 👑':''}${spoon?' 🥄':''}</span>
+        <span class="lbname">${esc(r.name)}${r.id===meId?' <span class="note">(you)</span>':''}${crown}${spoon?' 🥄':''}</span>
         ${S.config.drawDone?`<span class="lbalive">${r.alive}/${r.teams} in</span>`:''}
-        <span class="pts">${r.pts}</span>
+        ${metric}
       </div>
       ${strip?`<div class="lbteams">${strip}</div>`:''}
     </div>`;
   }).join("");
+  const ownerName=champOwner?(S.participants.find(p=>p.id===champOwner)||{}).name:null;
+  const lead=simple
+    ?(champ?`🏆 Winner: <b>${esc(ownerName||'?')}</b> — owns ${flag(champ)} ${esc(champ)}.`:(S.config.drawDone?"Whoever owns the World Cup winner takes it. Wins &amp; losses so far:":"Draw not run yet."))
+    :(S.config.drawDone?(champ?`Champions: ${flag(champ)} ${esc(champ)}. Final standings.`:"Live standings. Updates as results go in."):"Draw not run yet.");
   return `<div class="card"><h2>Leaderboard</h2>
-    <p class="lead">${S.config.drawDone?(champ?`Champions: ${flag(champ)} ${esc(champ)}. Final standings.`:"Live standings. Updates as results go in."):"Draw not run yet."}</p>
+    <p class="lead">${lead}</p>
     ${cards}
     <div class="row" style="margin-top:14px"><button class="btn ghost sm" id="b_share">Copy invite link</button></div></div>`;
 }
@@ -814,17 +841,18 @@ function viewMine(){
   }
   const me=S.participants.find(p=>p.id===meId);
   const guest=me&&!me.user_id;
+  const simple=!!S.config.simpleMode;
   const teams=S.assignments[meId]||[];
   const rows=standings();const rank=rows.findIndex(r=>r.id===meId)+1;
   const upcoming=teams.flatMap(t=>teamFixtures(t).filter(f=>!f.score)).sort((a,b)=>a.sort-b.sort)[0];
   const blocks=teams.map(t=>{
     const fx=teamFixtures(t).map(f=>{const opp=f.t0===t?f.t1:f.t0;const res=f.score?` <span class="pts" style="font-size:13px">${f.score}</span>`:"";
       return `<div style="font-size:13px;color:var(--ink-dim);padding:2px 0">${f.dayLabel}${f.timeLabel?" · "+f.timeLabel:""} v ${flag(opp)} ${esc(opp)}${res}</div>`;}).join("");
-    return `<div style="margin-bottom:12px">${teamChip(t)} <span class="note">${teamPoints(t)} pts</span>${fx}</div>`;
+    return `<div style="margin-bottom:12px">${teamChip(t)} <span class="note">${simple?teamPips(t):teamPoints(t)+' pts'}</span>${fx}</div>`;
   }).join("")||'<div class="empty">No teams yet — waiting on the draw.</div>';
   return `<div class="card"><h2>${esc(me.name)}</h2>
     <div class="stat">
-      <div class="b"><div class="n">${playerPoints(meId)}</div><div class="l">Points</div></div>
+      <div class="b"><div class="n">${simple?(function(){const f=playerForm(meId);return f.w+'-'+f.d+'-'+f.l;})():playerPoints(meId)}</div><div class="l">${simple?'W-D-L':'Points'}</div></div>
       <div class="b"><div class="n">#${rank}</div><div class="l">Position</div></div>
       <div class="b"><div class="n">${teams.filter(t=>!isOut(t)).length}/${teams.length}</div><div class="l">Teams still in</div></div>
     </div>
@@ -862,23 +890,25 @@ function viewAlive(){
 function viewBracket(){
   const cols=STAGES.map(s=>{const teams=(S.results.advanced[s.key]||[]);
     return `<div class="card" style="margin:0"><h2 style="font-size:15px">${s.label}</h2>
-      <p class="note" style="margin-top:0">+${s.pts} pts &middot; ${teams.length}/${s.size}</p>
+      <p class="note" style="margin-top:0">${S.config.simpleMode?'':'+'+s.pts+' pts &middot; '}${teams.length}/${s.size}</p>
       <div>${teams.map(t=>teamChip(t)).join("")||'<span class="empty" style="padding:8px">TBD</span>'}</div></div>`;}).join("");
   return `<div class="grid2">${cols}</div>`;
 }
 function viewRules(){
-  const sc=S.config.scoring;
+  const sc=S.config.scoring;const simple=!!S.config.simpleMode;
   return `<div class="card"><h2>How it works</h2>
-    <p class="lead">A classic sweepstake: teams are drawn at random, no skill, no swaps. A points leaderboard runs on top so everyone has something to follow even after their teams go out.</p>
+    <p class="lead">A classic sweepstake: teams are drawn at random, no skill, no swaps.${simple?' Whoever owns the team that wins the World Cup wins the sweepstake.':' A points leaderboard runs on top so everyone has something to follow even after their teams go out.'}</p>
     <h2 style="font-size:15px;margin-top:14px">The draw</h2>
     <p class="lead">All 48 teams are shared out as evenly as possible across everyone signed up. Strong teams are spread so no single person scoops all the favourites. Once drawn, teams are permanent.</p>
-    <h2 style="font-size:15px">Scoring (per team you own)</h2>
+    ${simple?`<h2 style="font-size:15px">Winning</h2>
+    <p class="lead">No points to track — the winner is simply whoever owns the champion. The leaderboard shows each player's wins and losses for fun: <span class="pip W"></span> win &middot; <span class="pip D"></span> draw &middot; <span class="pip L"></span> loss.</p>`
+    :`<h2 style="font-size:15px">Scoring (per team you own)</h2>
     <div class="tablewrap"><table><tbody>
       <tr><td>Group win</td><td class="num">${sc.win} pts</td></tr>
       <tr><td>Group draw</td><td class="num">${sc.draw} pts</td></tr>
       ${STAGES.map(s=>`<tr><td>Reach ${s.label}</td><td class="num">+${s.pts} pts</td></tr>`).join("")}
     </tbody></table></div>
-    <p class="note">Progression bonuses stack, so a team that goes all the way earns every milestone along the way. Your score is the total across all your teams.</p>
+    <p class="note">Progression bonuses stack, so a team that goes all the way earns every milestone along the way. Your score is the total across all your teams.</p>`}
     ${S.config.pot?`<h2 style="font-size:15px">Prizes</h2><p class="lead">Pot: ${esc(S.config.pot)}</p>
       ${S.config.prizes.first?`<p class="note">1st: ${esc(S.config.prizes.first)}</p>`:""}
       ${S.config.prizes.second?`<p class="note">2nd: ${esc(S.config.prizes.second)}</p>`:""}
@@ -947,6 +977,7 @@ function viewOrg(){
       <label class="fld"><span class="lbl">2nd place prize</span><input id="c_p2" value="${esc(S.config.prizes.second)}"></label>
       <label class="fld"><span class="lbl">Wooden spoon (last)</span><input id="c_ps" value="${esc(S.config.prizes.spoon)}"></label>
     </div>
+    <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_simple" ${S.config.simpleMode?"checked":""}> <span>Simple mode — winner is whoever owns the champion. Hides the points system and shows wins/losses (<span class="pip W"></span> win <span class="pip D"></span> draw <span class="pip L"></span> loss) instead.</span></label>
     <button class="btn" id="c_save">Save event details</button></div>`;
 
   html+=`<div class="card"><h2>Organisers</h2>
@@ -1032,7 +1063,8 @@ function wire(){
 
   if($("#c_save"))$("#c_save").onclick=()=>guard(async()=>{
     await DB.setConfig({header:$("#c_header").value.trim()||S.config.header,accentColor:$("#c_col").value,
-      pot:$("#c_pot").value.trim(),prizes:{first:$("#c_p1").value.trim(),second:$("#c_p2").value.trim(),spoon:$("#c_ps").value.trim()}});
+      pot:$("#c_pot").value.trim(),prizes:{first:$("#c_p1").value.trim(),second:$("#c_p2").value.trim(),spoon:$("#c_ps").value.trim()},
+      simpleMode:$("#c_simple").checked});
   },"Saved");
   if($("#org_add"))$("#org_add").onclick=()=>{const e=lc($("#org_email").value.trim());if(!e){toast("Enter an email");return;}
     guard(async()=>{await DB.addOrganiser(e);},"Organiser added");};
