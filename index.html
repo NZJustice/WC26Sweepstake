@@ -446,6 +446,8 @@ function teamPips(t){const g=groupOf(t);return GROUP_COMBOS.map((c,i)=>matchResu
 function playerForm(id){const res=[];(S.assignments[id]||[]).forEach(team=>{const g=groupOf(team);GROUP_COMBOS.forEach((c,i)=>{const r=matchResultFor(team,g,i);if(r)res.push(r);});});return {w:res.filter(x=>x==='W').length,d:res.filter(x=>x==='D').length,l:res.filter(x=>x==='L').length};}
 function recordHTML(f){return `<span class="rec"><span class="w">${f.w}</span>-<span class="d">${f.d}</span>-<span class="l">${f.l}</span></span>`;}
 function championOwnerId(){const champ=(S.results.advanced.W||[])[0];if(!champ)return null;const e=Object.entries(S.assignments).find(([id,arr])=>arr.includes(champ));return e?e[0]:null;}
+function ownersOf(team){return Object.entries(S.assignments).filter(([id,arr])=>arr.includes(team)).map(([id])=>(S.participants.find(p=>p.id===id)||{}).name).filter(Boolean);}
+function coOwners(team,excludeId){return Object.entries(S.assignments).filter(([id,arr])=>id!==excludeId&&arr.includes(team)).map(([id])=>(S.participants.find(p=>p.id===id)||{}).name).filter(Boolean);}
 function playerPoints(id){return (S.assignments[id]||[]).reduce((s,t)=>s+teamPoints(t),0);}
 function standings(){
   const rows=S.participants.map(p=>({id:p.id,name:p.name,pts:playerPoints(p.id),
@@ -484,7 +486,19 @@ function autoQualifyR32(){
 function computeDraw(){
   const order=shuffle(S.participants.map(p=>p.id));
   let pool=[];for(let t=1;t<=4;t++)pool=pool.concat(shuffle(TEAMS.filter(x=>x.tier===t).map(x=>x.id)));
-  const n=order.length;const out=[];
+  const n=order.length;
+  // Shared-teams (syndicate) draw — only when there are more players than teams.
+  // Everyone gets exactly one team; every team gets at least one owner; the
+  // overflow (n-48) teams get a second owner, spread at random across strengths.
+  if(S.config.sharedTeams && n>pool.length){
+    const T=pool.length, q=Math.floor(n/T), r=n%T;
+    let slots=[];for(let c=0;c<q;c++)slots=slots.concat(pool);
+    if(r>0)slots=slots.concat(shuffle(pool.slice()).slice(0,r));
+    slots=shuffle(slots);
+    return order.map((id,i)=>({participant_id:id,team:slots[i]}));
+  }
+  // Default deal — unchanged (all 48 teams snake-dealt across players).
+  const out=[];
   pool.forEach((teamId,k)=>{const round=Math.floor(k/n);const pos=(round%2===0)?(k%n):(n-1-(k%n));out.push({participant_id:order[pos],team:teamId});});
   return out;
 }
@@ -848,7 +862,7 @@ function viewMine(){
   const blocks=teams.map(t=>{
     const fx=teamFixtures(t).map(f=>{const opp=f.t0===t?f.t1:f.t0;const res=f.score?` <span class="pts" style="font-size:13px">${f.score}</span>`:"";
       return `<div style="font-size:13px;color:var(--ink-dim);padding:2px 0">${f.dayLabel}${f.timeLabel?" · "+f.timeLabel:""} v ${flag(opp)} ${esc(opp)}${res}</div>`;}).join("");
-    return `<div style="margin-bottom:12px">${teamChip(t)} <span class="note">${simple?teamPips(t):teamPoints(t)+' pts'}</span>${fx}</div>`;
+    return `<div style="margin-bottom:12px">${teamChip(t)} <span class="note">${simple?teamPips(t):teamPoints(t)+' pts'}</span>${(()=>{const sh=coOwners(t,meId);return sh.length?` <span class="grp">· shared with ${esc(sh.join(", "))}</span>`:'';})()}${fx}</div>`;
   }).join("")||'<div class="empty">No teams yet — waiting on the draw.</div>';
   return `<div class="card"><h2>${esc(me.name)}</h2>
     <div class="stat">
@@ -863,7 +877,7 @@ function viewMine(){
 }
 function viewFixtures(){
   const all=allFixtures().sort((a,b)=>a.sort-b.sort||a.g.localeCompare(b.g));
-  const owner=t=>{const e=Object.entries(S.assignments).find(([id,arr])=>arr.includes(t));return e?(S.participants.find(p=>p.id===e[0])||{}).name:"";};
+  const owner=t=>ownersOf(t).join(" / ");
   const tag=t=>S.config.drawDone&&owner(t)?` <span class="grp">${esc(owner(t))}</span>`:"";
   const line=f=>{const res=f.score?`<span class="pts" style="font-size:14px">${f.score}</span>`:`<span class="note">${f.timeLabel||"vs"}</span>`;
     return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13.5px">
@@ -880,7 +894,7 @@ function viewFixtures(){
 function viewAlive(){
   const alive=TEAMS.map(t=>t.id).filter(t=>!isOut(t));
   const out=TEAMS.map(t=>t.id).filter(t=>isOut(t));
-  const owner=t=>{const e=Object.entries(S.assignments).find(([id,arr])=>arr.includes(t));return e?(S.participants.find(p=>p.id===e[0])||{}).name:"";};
+  const owner=t=>ownersOf(t).join(" / ");
   const chip=t=>`<span class="team">${flag(t)} ${esc(t)} <span class="grp">${esc(owner(t)||groupOf(t))}</span></span>`;
   return `<div class="card"><h2>Teams still in (${alive.length})</h2>
     <p class="lead">Chip shows the owner once the draw is done.</p>
@@ -899,7 +913,7 @@ function viewRules(){
   return `<div class="card"><h2>How it works</h2>
     <p class="lead">A classic sweepstake: teams are drawn at random, no skill, no swaps.${simple?' Whoever owns the team that wins the World Cup wins the sweepstake.':' A points leaderboard runs on top so everyone has something to follow even after their teams go out.'}</p>
     <h2 style="font-size:15px;margin-top:14px">The draw</h2>
-    <p class="lead">All 48 teams are shared out as evenly as possible across everyone signed up. Strong teams are spread so no single person scoops all the favourites. Once drawn, teams are permanent.</p>
+    <p class="lead">All 48 teams are shared out as evenly as possible across everyone signed up. Strong teams are spread so no single person scoops all the favourites. Once drawn, teams are permanent.${S.config.sharedTeams?' With more players than teams, some teams are shared by two people (a syndicate) who split any prize.':''}</p>
     ${simple?`<h2 style="font-size:15px">Winning</h2>
     <p class="lead">No points to track — the winner is simply whoever owns the champion. The leaderboard shows each player's wins and losses for fun: <span class="pip W"></span> win &middot; <span class="pip D"></span> draw &middot; <span class="pip L"></span> loss.</p>`
     :`<h2 style="font-size:15px">Scoring (per team you own)</h2>
@@ -929,6 +943,9 @@ function viewOrg(){
       <button class="btn ghost sm" id="o_share">Copy invite link</button></div>
       <div style="margin-bottom:12px">${S.participants.map(p=>`<span class="team">${esc(p.name)} <a href="#" data-rm="${p.id}" aria-label="Remove ${esc(p.name)}" style="color:var(--bad);text-decoration:none">&times;</a></span>`).join("")||'<span class="empty">No one yet</span>'}</div>
       <div class="warn">Run the draw once everyone has joined. This assigns all 48 teams and closes signups. It can only be undone by reset.</div>
+      ${S.participants.length>48?(S.config.sharedTeams
+        ?`<div class="good">${S.participants.length} players, 48 teams — everyone gets a team; ${S.participants.length-48} team${S.participants.length-48===1?'':'s'} will be shared by two people.</div>`
+        :`<div class="warn" style="color:var(--bad);border-color:color-mix(in srgb,var(--bad) 40%,transparent);background:color-mix(in srgb,var(--bad) 12%,transparent)">You have ${S.participants.length} players but only 48 teams. Turn on <b>Shared teams</b> in Event &amp; prizes below, or ${S.participants.length-48} players will be left with no team.</div>`):''}
       <button class="btn" id="o_draw" ${S.participants.length<1?"disabled":""}>Run the draw (${S.participants.length} in)</button>`;
   } else {
     html+=`<p class="lead">Draw complete. ${S.participants.length} players, 48 teams assigned.</p>
@@ -978,6 +995,7 @@ function viewOrg(){
       <label class="fld"><span class="lbl">Wooden spoon (last)</span><input id="c_ps" value="${esc(S.config.prizes.spoon)}"></label>
     </div>
     <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_simple" ${S.config.simpleMode?"checked":""}> <span>Simple mode — winner is whoever owns the champion. Hides the points system and shows wins/losses (<span class="pip W"></span> win <span class="pip D"></span> draw <span class="pip L"></span> loss) instead.</span></label>
+    <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_shared" ${S.config.sharedTeams?"checked":""}> <span>Shared teams (syndicates) — only matters if more than 48 people join. Each player gets one team; the extra players share a team with someone (and split any prize), so nobody is left out.</span></label>
     <button class="btn" id="c_save">Save event details</button></div>`;
 
   html+=`<div class="card"><h2>Organisers</h2>
@@ -1064,7 +1082,7 @@ function wire(){
   if($("#c_save"))$("#c_save").onclick=()=>guard(async()=>{
     await DB.setConfig({header:$("#c_header").value.trim()||S.config.header,accentColor:$("#c_col").value,
       pot:$("#c_pot").value.trim(),prizes:{first:$("#c_p1").value.trim(),second:$("#c_p2").value.trim(),spoon:$("#c_ps").value.trim()},
-      simpleMode:$("#c_simple").checked});
+      simpleMode:$("#c_simple").checked,sharedTeams:$("#c_shared").checked});
   },"Saved");
   if($("#org_add"))$("#org_add").onclick=()=>{const e=lc($("#org_email").value.trim());if(!e){toast("Enter an email");return;}
     guard(async()=>{await DB.addOrganiser(e);},"Organiser added");};
