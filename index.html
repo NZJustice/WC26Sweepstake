@@ -138,6 +138,7 @@
   .pts{font-family:'Anton',sans-serif;font-size:20px;color:var(--accent)}
   .me-row{background:var(--accent-soft)}
   .spoon td{color:var(--bad)}
+  tr.unpaid td{background:color-mix(in srgb,var(--bad) 9%,transparent)}
   .lbcard{padding:12px 4px;border-bottom:1px solid var(--line)}
   .lbcard:last-child{border-bottom:none}
   .lbcard.me{background:var(--accent-soft);border-radius:10px}
@@ -381,6 +382,7 @@ let S = null;          // assembled view-model for the current pool
 let meId = null;       // my participant id in this pool (from auth)
 let poolId = null;     // current pool slug
 let unsub = null;      // realtime unsubscribe
+let PAY = null;        // organiser-only payments cache (lazy-loaded, kept out of the public S)
 let tab = "join";
 
 const $ = s=>document.querySelector(s);
@@ -647,6 +649,8 @@ const SupaDB = {
     const adv=[];Object.entries((snap.results||{}).advanced||{}).forEach(([st,teams])=>(teams||[]).forEach(t=>adv.push({pool_id:poolId,stage:st,team:t})));
     if(adv.length){const {error}=await sb.from('advanced').insert(adv);if(error)throw error;}
   },
+  async loadPayments(){const {data,error}=await sb.from('payments').select('*').eq('pool_id',poolId);if(error)throw error;return data||[];},
+  async setPayment(participant_id,patch){const {error}=await sb.from('payments').upsert(Object.assign({pool_id:poolId,participant_id,updated_at:new Date().toISOString()},patch),{onConflict:'pool_id,participant_id'});if(error)throw error;},
   subscribe(id,cb){
     const ch=sb.channel('pool-'+id);
     ch.on('postgres_changes',{event:'*',schema:'public',table:'pools',filter:'id=eq.'+id},cb);
@@ -661,7 +665,7 @@ const SupaDB = {
 const DKEY="wc_demo_db_v1";
 function demoAll(){try{return JSON.parse(localStorage.getItem(DKEY)||"{}");}catch(e){return {};}}
 function demoWrite(o){localStorage.setItem(DKEY,JSON.stringify(o));window.dispatchEvent(new Event("wc-demo-change"));}
-function demoPool(o,id){return o[id]||(o[id]={pool:{id,name:"",config:{},organiser_emails:[]},participants:[],assignments:[],group:[],advanced:[]});}
+function demoPool(o,id){return o[id]||(o[id]={pool:{id,name:"",config:{},organiser_emails:[]},participants:[],assignments:[],group:[],advanced:[],payments:[]});}
 const DemoDB={
   async loadPool(id){const o=demoAll();const p=o[id];if(!p)return null;return assembleS(p.pool,p.participants,p.assignments,p.group,p.advanced);},
   async myPools(){const u=Auth.user();if(!u)return [];const o=demoAll();
@@ -682,7 +686,7 @@ const DemoDB={
   async setAdvanced(team,add,remove){const o=demoAll();const p=demoPool(o,poolId);
     (add||[]).forEach(s=>{if(!p.advanced.some(r=>r.stage===s&&r.team===team))p.advanced.push({stage:s,team});});
     if(remove&&remove.length)p.advanced=p.advanced.filter(r=>!(r.team===team&&remove.includes(r.stage)));demoWrite(o);},
-  async reset(){const o=demoAll();const p=demoPool(o,poolId);p.participants=[];p.assignments=[];p.group=[];p.advanced=[];
+  async reset(){const o=demoAll();const p=demoPool(o,poolId);p.participants=[];p.assignments=[];p.group=[];p.advanced=[];p.payments=[];
     p.pool.config={...p.pool.config,drawDone:false,signupsOpen:true};demoWrite(o);},
   async importPool(snap){const o=demoAll();const p=demoPool(o,poolId);const c=snap.config||{};
     p.pool.config={...p.pool.config,header:c.header,accentColor:c.accentColor,pot:c.pot,prizes:c.prizes,scoring:c.scoring,drawDone:!!c.drawDone,signupsOpen:c.signupsOpen!==false};
@@ -691,6 +695,8 @@ const DemoDB={
     p.group=[];Object.entries((snap.results||{}).group||{}).forEach(([g,arr])=>(arr||[]).forEach((m,i)=>{if(m&&(m.sa!==""||m.sb!==""||m.date))p.group.push({grp:g,idx:i,score_a:m.sa===""?null:Number(m.sa),score_b:m.sb===""?null:Number(m.sb),match_date:m.date||null,pending_a:null,pending_b:null,source:m.source||'manual'});}));
     p.advanced=[];Object.entries((snap.results||{}).advanced||{}).forEach(([st,teams])=>(teams||[]).forEach(t=>p.advanced.push({stage:st,team:t})));
     demoWrite(o);},
+  async loadPayments(){const o=demoAll();const p=demoPool(o,poolId);return (p.payments||[]).slice();},
+  async setPayment(participant_id,patch){const o=demoAll();const p=demoPool(o,poolId);p.payments=p.payments||[];let row=p.payments.find(r=>r.participant_id===participant_id);if(!row){row={pool_id:poolId,participant_id,amount:null,paid:false,paid_at:null};p.payments.push(row);}Object.assign(row,patch);demoWrite(o);},
   subscribe(id,cb){const h=()=>cb();window.addEventListener("wc-demo-change",h);window.addEventListener("storage",h);
     return ()=>{window.removeEventListener("wc-demo-change",h);window.removeEventListener("storage",h);};}
 };
@@ -739,6 +745,7 @@ function tabsBar(){
   if(S.config.drawDone)items.push(["alive","Teams in"]);
   if(S.config.drawDone)items.push(["bracket","Progression"]);
   items.push(["rules","How it works"]);
+  if(isOrganiser()&&S.config.paidMode) items.push(["pay","💷 Payments"]);
   items.push(["org", isOrganiser()?"Organiser ✓":"Organiser"]);
   t.innerHTML=items.map(([k,l])=>`<button data-t="${k}" class="${tab===k?'on':''}" ${tab===k?'aria-current="page"':''}>${l}</button>`).join("");
   t.querySelectorAll("button").forEach(b=>b.onclick=()=>{tab=b.dataset.t;render();});
@@ -756,6 +763,7 @@ function render(){
   else if(tab==="alive")v.innerHTML=viewAlive();
   else if(tab==="bracket")v.innerHTML=viewBracket();
   else if(tab==="rules")v.innerHTML=viewRules();
+  else if(tab==="pay")v.innerHTML=viewPayments();
   else if(tab==="org")v.innerHTML=viewOrg();
   wire();
 }
@@ -936,6 +944,32 @@ function viewRules(){
       ${S.config.prizes.second?`<p class="note">2nd: ${esc(S.config.prizes.second)}</p>`:""}
       ${S.config.prizes.spoon?`<p class="note">Wooden spoon (last): ${esc(S.config.prizes.spoon)}</p>`:""}`:""}</div>`;
 }
+function loadPay(){DB.loadPayments().then(d=>{PAY=d||[];render();}).catch(e=>{console.error(e);PAY=[];render();});}
+function viewPayments(){
+  if(!isOrganiser()||!S.config.paidMode) return `<div class="card"><h2>💷 Payments</h2><p class="lead">This isn't set up as a paid sweepstake.</p></div>`;
+  if(PAY===null||PAY==="loading"){if(PAY===null){PAY="loading";loadPay();}return `<div class="card"><h2>💷 Payments</h2><p class="lead">Loading…</p></div>`;}
+  const fee=Number(S.config.entryFee)||0;
+  const by={};PAY.forEach(p=>by[p.participant_id]=p);
+  const rows=S.participants.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(p=>{const pay=by[p.id]||{};return {id:p.id,name:p.name,amt:(pay.amount!=null?Number(pay.amount):fee),paid:!!pay.paid,at:pay.paid_at};});
+  const money=n=>'$'+(Number.isInteger(n)?n:(Math.round(n*100)/100).toFixed(2));
+  const expected=rows.reduce((s,r)=>s+(r.amt||0),0), collected=rows.reduce((s,r)=>s+(r.paid?(r.amt||0):0),0), outstanding=expected-collected, paidN=rows.filter(r=>r.paid).length;
+  const tr=rows.map(r=>`<tr class="${r.paid?'':'unpaid'}">
+    <td>${esc(r.name)}</td>
+    <td class="num"><input type="number" min="0" step="0.01" inputmode="decimal" aria-label="Amount for ${esc(r.name)}" data-pay-amt="${r.id}" value="${r.amt}" style="width:78px;text-align:right;padding:6px 8px"></td>
+    <td style="text-align:center"><input type="checkbox" aria-label="Paid: ${esc(r.name)}" data-pay-paid="${r.id}" ${r.paid?"checked":""} style="width:18px;height:18px;accent-color:var(--accent)"></td>
+    <td class="num">${r.paid&&r.at?esc(new Date(r.at).toLocaleDateString(undefined,{day:"numeric",month:"short"})):"—"}</td>
+  </tr>`).join("");
+  return `<div class="card"><h2>💷 Payments</h2>
+    <p class="lead">Private to you — players can't see this tab or its data. Default entry fee is $${fee} (change it in Event &amp; prizes); override any row for syndicate splits.</p>
+    <div class="stat" style="margin-bottom:14px">
+      <div class="b"><div class="n">${money(collected)}</div><div class="l">Collected</div></div>
+      <div class="b"><div class="n">${money(outstanding)}</div><div class="l">Outstanding</div></div>
+      <div class="b"><div class="n">${paidN}/${rows.length}</div><div class="l">Paid</div></div>
+    </div>
+    <div class="tablewrap"><table><thead><tr><th>Player</th><th class="num">Amount</th><th style="text-align:center">Paid?</th><th class="num">When</th></tr></thead><tbody>${tr}</tbody></table></div>
+    ${rows.length&&outstanding<=0?`<div class="good" style="margin-top:12px">Everyone's paid up 🎉</div>`:(rows.filter(r=>!r.paid).length?`<p class="note">Still to pay: ${esc(rows.filter(r=>!r.paid).map(r=>r.name).join(", "))}</p>`:"")}
+  </div>`;
+}
 function viewOrg(){
   const u=Auth.user();
   if(!u)return `<div class="card"><h2>Organiser</h2><p class="lead">Sign in to manage this sweepstake.</p>
@@ -1004,6 +1038,8 @@ function viewOrg(){
     </div>
     <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_simple" ${S.config.simpleMode?"checked":""}> <span>Simple mode — winner is whoever owns the champion. Hides the points system and shows wins/losses (<span class="pip W"></span> win <span class="pip D"></span> draw <span class="pip L"></span> loss) instead.</span></label>
     <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_shared" ${S.config.sharedTeams?"checked":""}> <span>Shared teams (syndicates) — only matters if more than 48 people join. Each player gets one team; the extra players share a team with someone (and split any prize), so nobody is left out.</span></label>
+    <label class="toggle" style="margin:2px 0 10px"><input type="checkbox" id="c_paid" ${S.config.paidMode?"checked":""}> <span>Paid sweepstake — adds a private <b>💷 Payments</b> tab (only you, the organiser, can see it) to track who's paid.</span></label>
+    <label class="fld" style="max-width:220px"><span class="lbl">Entry fee per player ($)</span><input id="c_fee" type="number" min="0" step="0.01" inputmode="decimal" value="${S.config.entryFee!=null?esc(String(S.config.entryFee)):''}" placeholder="e.g. 5"></label>
     <button class="btn" id="c_save">Save event details</button></div>`;
 
   html+=`<div class="card"><h2>Organisers</h2>
@@ -1087,10 +1123,21 @@ function wire(){
     guard(async()=>{await DB.setStage("R32",r.teams);},"Round of 32 set (32 teams)");
   };
 
+  document.querySelectorAll("[data-pay-paid]").forEach(cb=>cb.onchange=async()=>{
+    const id=cb.dataset.payPaid;
+    try{await DB.setPayment(id,{paid:cb.checked,paid_at:cb.checked?new Date().toISOString():null});PAY=await DB.loadPayments();render();toast(cb.checked?"Marked paid":"Marked unpaid");}
+    catch(e){console.error(e);toast("Couldn't save");}
+  });
+  document.querySelectorAll("[data-pay-amt]").forEach(inp=>inp.onchange=async()=>{
+    const id=inp.dataset.payAmt,v=inp.value.trim();
+    try{await DB.setPayment(id,{amount:v===""?null:Number(v)});PAY=await DB.loadPayments();render();toast("Saved");}
+    catch(e){console.error(e);toast("Couldn't save");}
+  });
   if($("#c_save"))$("#c_save").onclick=()=>guard(async()=>{
     await DB.setConfig({header:$("#c_header").value.trim()||S.config.header,accentColor:$("#c_col").value,
       pot:$("#c_pot").value.trim(),prizes:{first:$("#c_p1").value.trim(),second:$("#c_p2").value.trim(),spoon:$("#c_ps").value.trim()},
-      simpleMode:$("#c_simple").checked,sharedTeams:$("#c_shared").checked});
+      simpleMode:$("#c_simple").checked,sharedTeams:$("#c_shared").checked,
+      paidMode:$("#c_paid").checked,entryFee:($("#c_fee").value.trim()===""?0:Number($("#c_fee").value))});
   },"Saved");
   if($("#org_add"))$("#org_add").onclick=()=>{const e=lc($("#org_email").value.trim());if(!e){toast("Enter an email");return;}
     guard(async()=>{await DB.addOrganiser(e);},"Organiser added");};
@@ -1126,6 +1173,7 @@ async function boot(){
   if(booting)return;booting=true;
   try{
     if(unsub){unsub();unsub=null;}
+    PAY=null;
     poolId=new URLSearchParams(location.search).get("pool");
     if(!poolId){await renderLanding();return;}
     S=await DB.loadPool(poolId);
