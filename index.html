@@ -455,6 +455,8 @@ function recordHTML(f){return `<span class="rec"><span class="w">${f.w}</span>-<
 function championOwnerId(){const champ=(S.results.advanced.W||[])[0];if(!champ)return null;const e=Object.entries(S.assignments).find(([id,arr])=>arr.includes(champ));return e?e[0]:null;}
 function ownersOf(team){return Object.entries(S.assignments).filter(([id,arr])=>arr.includes(team)).map(([id])=>(S.participants.find(p=>p.id===id)||{}).name).filter(Boolean);}
 function coOwners(team,excludeId){return Object.entries(S.assignments).filter(([id,arr])=>id!==excludeId&&arr.includes(team)).map(([id])=>(S.participants.find(p=>p.id===id)||{}).name).filter(Boolean);}
+// Group matches with an unconfirmed API-suggested score (pending, no manual score yet).
+function pendingMatches(){const out=[];Object.keys(GROUPS).forEach(g=>{(S.results.group[g]||[]).forEach((m,i)=>{if(m&&m.source==='auto'&&m.pa!==''&&m.pb!==''&&(m.sa===''||m.sb===''))out.push({g,i,pa:Number(m.pa),pb:Number(m.pb)});});});return out;}
 function playerPoints(id){return (S.assignments[id]||[]).reduce((s,t)=>s+teamPoints(t),0);}
 function standings(){
   const rows=S.participants.map(p=>({id:p.id,name:p.name,pts:playerPoints(p.id),
@@ -996,7 +998,7 @@ function viewOrg(){
   html+=`</div>`;
 
   if(S.config.drawDone){
-    html+=`<div class="card"><h2>Group results</h2><p class="lead">Enter scores after each round. Points update instantly. Auto-fetched scores (if you set up the API) show as suggestions to confirm.</p>`;
+    html+=`<div class="card"><h2>Group results</h2><p class="lead">Enter scores after each round. Points update instantly. Auto-fetched scores (if you set up the API) show as suggestions to confirm.</p>${(()=>{const pd=pendingMatches();return pd.length?`<div class="good" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px"><span>🔵 ${pd.length} new result${pd.length===1?'':'s'} from the API to review below.</span><button class="btn sm" id="o_cfmall">Confirm all ${pd.length}</button></div>`:'';})()}`;
     Object.keys(GROUPS).forEach(g=>{
       html+=`<fieldset class="grp-set"><legend>Group ${g}</legend>`;
       GROUP_COMBOS.forEach((c,i)=>{
@@ -1113,6 +1115,10 @@ function wire(){
     const g=a.dataset.cfmG,i=+a.dataset.cfmI,pa=Number(a.dataset.pa),pb=Number(a.dataset.pb);
     guard(async()=>{await DB.upsertGroup(g,i,{score_a:pa,score_b:pb,source:"auto-confirmed",pending_a:null,pending_b:null});},"Confirmed");
   });
+  if($("#o_cfmall"))$("#o_cfmall").onclick=()=>{
+    const pd=pendingMatches();if(!pd.length)return;
+    guard(async()=>{for(const m of pd){await DB.upsertGroup(m.g,m.i,{score_a:m.pa,score_b:m.pb,source:"auto-confirmed",pending_a:null,pending_b:null});}},`Confirmed ${pd.length} result${pd.length===1?'':'s'}`);
+  };
   document.querySelectorAll("input[data-ko]").forEach(cb=>cb.onchange=()=>{
     const k=cb.dataset.ko,t=cb.value;const ki=STAGES.findIndex(z=>z.key===k);
     if(cb.checked)guard(async()=>{await DB.setAdvanced(t,[k],[]);});
