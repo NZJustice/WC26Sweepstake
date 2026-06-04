@@ -1,0 +1,14 @@
+name: Sync WC2026 results
+on:
+  schedule:
+    - cron: "*/30 * * * *"   # every 30 minutes
+  workflow_dispatch: {}        # manual "Run workflow" button (for testing)
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger sync-results edge function
+        run: |
+          curl -fsS -X POST "https://voqwpmmgrvalavvmzrih.supabase.co/functions/v1/sync-results" \
+            -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZvcXdwbW1ncnZhbGF2dm16cmloIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0NTI0NjgsImV4cCI6MjA5NjAyODQ2OH0.t0kROq7-8CgwKpJmymKsOtvANHIztwhSC9u8ab4rTVM" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}"
