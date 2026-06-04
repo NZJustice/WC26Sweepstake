@@ -208,6 +208,10 @@
     padding:22px;max-width:400px;width:100%;box-shadow:var(--shadow)}
   .demobar{background:color-mix(in srgb,var(--gold) 16%,var(--panel));border-bottom:1px solid color-mix(in srgb,var(--gold) 40%,transparent);
     color:var(--gold);font-size:12.5px;text-align:center;padding:7px 14px}
+  a.btn{display:inline-block;text-decoration:none}
+  .sitefoot{margin-top:30px;padding-top:18px;border-top:1px solid var(--line);text-align:center}
+  .sitefoot a{font-size:12.5px;color:var(--ink-dim);text-decoration:none}
+  .sitefoot a:hover{color:var(--accent)}
 </style>
 </head>
 <body>
@@ -227,6 +231,7 @@
 
   <nav class="tabs" id="tabs" aria-label="Sections"></nav>
   <main id="view" tabindex="-1"></main>
+  <footer class="sitefoot"><a href="https://nzjustice.github.io/WC26Fixtures/" target="_blank" rel="noopener">📅 Add the World Cup 2026 fixtures to your calendar</a></footer>
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -889,7 +894,10 @@ function viewFixtures(){
   all.forEach(f=>{if(f.dayKey!==curKey){curKey=f.dayKey;html+=`<div style="margin:14px 0 4px;font-weight:700;font-size:13px;color:var(--accent)">${f.dayLabel}</div>`;}html+=line(f);});
   return `<div class="card"><h2>Fixtures</h2>
     <p class="lead">Group stage. Kickoff times shown in your timezone${TZNAME?` (${esc(TZNAME)})`:""}.</p>${html}
-    <p class="note">Knockouts: Round of 32 (28 Jun–3 Jul), Round of 16 (4–7 Jul), Quarter-finals (9–11 Jul), Semi-finals (14–15 Jul), Third place (18 Jul), Final (19 Jul).</p></div>`;
+    <p class="note">Knockouts: Round of 32 (28 Jun–3 Jul), Round of 16 (4–7 Jul), Quarter-finals (9–11 Jul), Semi-finals (14–15 Jul), Third place (18 Jul), Final (19 Jul).</p></div>
+    <div class="card" style="text-align:center"><h2 style="font-size:15px">📅 Add these to your calendar</h2>
+    <p class="lead" style="margin-bottom:12px">Every World Cup 2026 fixture as a one-tap calendar download — works with Google, Apple and Outlook.</p>
+    <a class="btn ghost" href="https://nzjustice.github.io/WC26Fixtures/" target="_blank" rel="noopener">Open the WC2026 calendar →</a></div>`;
 }
 function viewAlive(){
   const alive=TEAMS.map(t=>t.id).filter(t=>!isOut(t));
