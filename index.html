@@ -162,6 +162,10 @@
   .rec .w{color:#22c55e} .rec .d{color:var(--ink-dim)} .rec .l{color:var(--bad)}
   .toggle{display:flex;align-items:flex-start;gap:9px;cursor:pointer;font-size:13px;color:var(--ink-dim)}
   .toggle input{width:auto;margin-top:3px;accent-color:var(--accent)}
+  .tag{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;padding:1px 6px;border-radius:5px;vertical-align:middle;margin-left:4px}
+  .tag.safe{color:#22c55e;background:color-mix(in srgb,#22c55e 16%,transparent);border:1px solid color-mix(in srgb,#22c55e 40%,transparent)}
+  .tag.risk{color:var(--bad);background:color-mix(in srgb,var(--bad) 14%,transparent);border:1px solid color-mix(in srgb,var(--bad) 40%,transparent)}
+  .pinwrap .lbcard{outline:2px solid var(--accent);outline-offset:-2px;border-radius:10px}
 
   .flag{width:22px;height:auto;border-radius:2px;vertical-align:middle;
     box-shadow:0 0 0 1px rgba(0,0,0,.35);background:var(--panel-2)}
@@ -427,7 +431,7 @@ function assembleS(pool, parts, asg, gr, adv){
 /* ============ Scoring engine ============ */
 function stageReached(t){for(let i=STAGES.length-1;i>=0;i--){if((S.results.advanced[STAGES[i].key]||[]).includes(t))return i+1;}return 0;}
 function currentStageIndex(){for(let i=STAGES.length-1;i>=0;i--){if((S.results.advanced[STAGES[i].key]||[]).length)return i+1;}return 0;}
-function isOut(t){const cs=currentStageIndex();if(cs===0)return false;return stageReached(t)<cs;}
+function isOut(t){const cs=currentStageIndex();if(cs>=1)return stageReached(t)<cs;return groupEliminated(t);}
 function groupPoints(t){
   let p=0;const g=groupOf(t);const arr=S.results.group[g];if(!arr)return 0;const teams=GROUPS[g];
   arr.forEach((m,i)=>{
@@ -490,6 +494,33 @@ function autoQualifyR32(){
   const best8=thirds.slice(0,8).map(x=>x.t);
   return {ok:true, teams:[...winners,...runners,...best8], best8};
 }
+/* ---- Conservative qualification status (group stage) ---- */
+function matchPlayed(m){return !!(m&&m.sa!==""&&m.sb!==""&&m.sa!=null&&m.sb!=null);}
+function groupComplete(g){return (S.results.group[g]||[]).filter(matchPlayed).length===6;}
+function allGroupsComplete(){return Object.keys(GROUPS).every(groupComplete);}
+// Only TRUE when a team is mathematically eliminated (never over-claims).
+function groupEliminated(t){
+  const g=groupOf(t),tab=groupTable(g),me=tab.find(x=>x.t===t);if(!me)return false;
+  const meMax=me.pts+3*(3-me.pld);
+  if(tab.filter(x=>x.t!==t&&x.pts>meMax).length>=3)return true;            // locked into 4th — can't even finish 3rd
+  if(groupComplete(g)){
+    const pos=tab.findIndex(x=>x.t===t);
+    if(pos===3)return true;                                                // finished 4th
+    if(pos===2&&allGroupsComplete()){const r=autoQualifyR32();return !(r.ok&&r.best8.includes(t));} // 3rd, not a best-8
+  }
+  return false;
+}
+// Display tag (group stage only): 'safe' = clinched top 2, 'risk' = currently below the line, 'out', '' = neutral.
+function teamStatus(t){
+  if(isOut(t))return 'out';
+  if(currentStageIndex()>=1)return '';            // knockouts: still in, no tag
+  if(allGroupsComplete())return 'safe';            // groups finished & not eliminated => qualified
+  const tab=groupTable(groupOf(t)),me=tab.find(x=>x.t===t);if(!me||me.pld===0)return ''; // no tag before a team has played
+  if(tab.filter(o=>o.t!==t&&(o.pts+3*(3-o.pld))>=me.pts).length<=1)return 'safe'; // clinched top 2
+  if(tab.findIndex(x=>x.t===t)>=2)return 'risk';   // currently below the line
+  return '';
+}
+function statusTag(t){const s=teamStatus(t);return s==='safe'?' <span class="tag safe">Safe</span>':s==='risk'?' <span class="tag risk">At risk</span>':'';}
 
 /* ============ Draw (balanced snake over strength tiers) ============ */
 function computeDraw(){
@@ -535,6 +566,8 @@ function teamFixtures(team){return allFixtures().filter(f=>f.t0===team||f.t1===t
 function fmtDate(iso){if(!iso)return "Date TBC";const d=new Date(iso+"T12:00:00Z");return d.toLocaleDateString(undefined,{timeZone:"UTC",weekday:"short",day:"numeric",month:"short"});}
 function poolLink(){const base=location.href.split('#')[0].split('?')[0];return base+"?pool="+encodeURIComponent(poolId||"");}
 function deviceMeKey(){return "wc_me_"+poolId;}
+function pinTop(){try{const v=localStorage.getItem("wc_pin_me");return v===null?true:v==="1";}catch(e){return true;}}
+function setPinTop(v){try{localStorage.setItem("wc_pin_me",v?"1":"0");}catch(e){}}
 function getDeviceMe(){try{return localStorage.getItem(deviceMeKey());}catch(e){return null;}}
 function setDeviceMe(id){try{if(id)localStorage.setItem(deviceMeKey(),id);}catch(e){}}
 function meLink(){return poolLink()+"&me="+encodeURIComponent(getDeviceMe()||meId||"");}
@@ -833,25 +866,40 @@ function viewJoin(){
 function viewBoard(){
   if(!S.participants.length)return `<div class="card"><div class="empty">No participants yet.</div></div>`;
   const simple=!!S.config.simpleMode;
-  const rows=standings();const last=rows.length>1?rows[rows.length-1].id:null;const champ=(S.results.advanced.W||[])[0];
+  const ranked=standings().map((r,i)=>({...r,rank:i+1}));
+  const last=ranked.length>1?ranked[ranked.length-1].id:null;const champ=(S.results.advanced.W||[])[0];
   const champOwner=simple?championOwnerId():null;
-  const cards=rows.map((r,i)=>{
-    const top=i===0?"top":"";const spoon=(r.id===last&&S.config.drawDone)?"spoon":"";const me=r.id===meId?"me":"";
-    const crown=simple?(r.id===champOwner?' 🏆':''):(i===0&&r.pts>0?' 👑':'');
-    const strip=(S.assignments[r.id]||[]).slice()
+  const groupPhase=S.config.drawDone&&currentStageIndex()===0;
+  const card=(r)=>{
+    const top=r.rank===1?"top":"";const spoon=(r.id===last&&S.config.drawDone)?"spoon":"";const me=r.id===meId?"me":"";
+    const crown=simple?(r.id===champOwner?' 🏆':''):(r.rank===1&&r.pts>0?' 👑':'');
+    const teams=(S.assignments[r.id]||[]);
+    const strip=teams.slice()
       .sort((a,b)=>(isOut(a)-isOut(b))||(teamPoints(b)-teamPoints(a))||a.localeCompare(b))
       .map(t=>`<span class="lbteam ${isOut(t)?'out':''}" title="${esc(t)}${simple?'':' · '+teamPoints(t)+' pts'}">${flag(t)} ${esc(t)}${simple?' '+teamPips(t):''}</span>`).join("");
     const metric=simple?recordHTML(playerForm(r.id)):`<span class="pts">${r.pts}</span>`;
+    let summ='';
+    if(groupPhase){
+      const sf=teams.filter(t=>teamStatus(t)==='safe').length,rk=teams.filter(t=>teamStatus(t)==='risk').length,ot=teams.filter(t=>isOut(t)).length,p=[];
+      if(sf)p.push(`<span style="color:#22c55e">✓ ${sf} safe</span>`);if(rk)p.push(`<span style="color:var(--bad)">⚠ ${rk} at risk</span>`);if(ot)p.push(`<span style="color:var(--ink-faint)">✗ ${ot} out</span>`);
+      if(p.length)summ=`<div class="note" style="margin-top:4px">${p.join(' · ')}</div>`;
+    }
     return `<div class="lbcard ${me} ${spoon}">
       <div class="lbtop">
-        <span class="rank ${top}">${i+1}</span>
+        <span class="rank ${top}">${r.rank}</span>
         <span class="lbname">${esc(r.name)}${r.id===meId?' <span class="note">(you)</span>':''}${crown}${spoon?' 🥄':''}</span>
         ${S.config.drawDone?`<span class="lbalive">${r.alive}/${r.teams} in</span>`:''}
         ${metric}
-      </div>
+      </div>${summ}
       ${strip?`<div class="lbteams">${strip}</div>`:''}
     </div>`;
-  }).join("");
+  };
+  const pinned=pinTop()&&meId&&ranked.some(r=>r.id===meId);
+  let cards;
+  if(pinned){
+    const meRow=ranked.find(r=>r.id===meId);
+    cards=`<div class="pinwrap">${card(meRow)}</div><div class="note" style="text-align:center;margin:6px 0 2px">— full leaderboard —</div>`+ranked.filter(r=>r.id!==meId).map(card).join("");
+  }else{cards=ranked.map(card).join("");}
   const ownerName=champOwner?(S.participants.find(p=>p.id===champOwner)||{}).name:null;
   const lead=simple
     ?(champ?`🏆 Winner: <b>${esc(ownerName||'?')}</b> — owns ${flag(champ)} ${esc(champ)}.`:(S.config.drawDone?"Whoever owns the World Cup winner takes it. Wins &amp; losses so far:":"Draw not run yet."))
@@ -859,7 +907,7 @@ function viewBoard(){
   return `<div class="card"><h2>Leaderboard</h2>
     <p class="lead">${lead}</p>
     ${cards}
-    <div class="row" style="margin-top:14px"><button class="btn ghost sm" id="b_share">Copy invite link</button></div></div>`;
+    <div class="row" style="margin-top:14px"><button class="btn ghost sm" id="b_share">Copy invite link</button>${meId?`<button class="btn ghost sm" id="b_pin">${pinTop()?'📌 Unpin me':'📌 Pin me to top'}</button>`:''}</div></div>`;
 }
 function viewMine(){
   const u=Auth.user();
@@ -877,7 +925,7 @@ function viewMine(){
   const blocks=teams.map(t=>{
     const fx=teamFixtures(t).map(f=>{const opp=f.t0===t?f.t1:f.t0;const res=f.score?` <span class="pts" style="font-size:13px">${f.score}</span>`:"";
       return `<div style="font-size:13px;color:var(--ink-dim);padding:2px 0">${f.dayLabel}${f.timeLabel?" · "+f.timeLabel:""} v ${flag(opp)} ${esc(opp)}${res}</div>`;}).join("");
-    return `<div style="margin-bottom:12px">${teamChip(t)} <span class="note">${simple?teamPips(t):teamPoints(t)+' pts'}</span>${(()=>{const sh=coOwners(t,meId);return sh.length?` <span class="grp">· shared with ${esc(sh.join(", "))}</span>`:'';})()}${fx}</div>`;
+    return `<div style="margin-bottom:12px">${teamChip(t)}${statusTag(t)} <span class="note">${simple?teamPips(t):teamPoints(t)+' pts'}</span>${(()=>{const sh=coOwners(t,meId);return sh.length?` <span class="grp">· shared with ${esc(sh.join(", "))}</span>`:'';})()}${fx}</div>`;
   }).join("")||'<div class="empty">No teams yet — waiting on the draw.</div>';
   return `<div class="card"><h2>${esc(me.name)}</h2>
     <div class="stat">
@@ -913,7 +961,7 @@ function viewAlive(){
   const alive=TEAMS.map(t=>t.id).filter(t=>!isOut(t));
   const out=TEAMS.map(t=>t.id).filter(t=>isOut(t));
   const owner=t=>ownersOf(t).join(" / ");
-  const chip=t=>`<span class="team">${flag(t)} ${esc(t)} <span class="grp">${esc(owner(t)||groupOf(t))}</span></span>`;
+  const chip=t=>`<span class="team">${flag(t)} ${esc(t)} <span class="grp">${esc(owner(t)||groupOf(t))}</span>${statusTag(t)}</span>`;
   return `<div class="card"><h2>Teams still in (${alive.length})</h2>
     <p class="lead">Chip shows the owner once the draw is done.</p>
     <div>${alive.map(chip).join("")||'<span class="empty">None</span>'}</div></div>
@@ -1069,6 +1117,7 @@ function wire(){
   if($("#m_signin"))$("#m_signin").onclick=()=>Auth.signIn();
   if($("#j_signin"))$("#j_signin").onclick=()=>Auth.signIn();
   if($("#b_share"))$("#b_share").onclick=shareLink;
+  if($("#b_pin"))$("#b_pin").onclick=()=>{setPinTop(!pinTop());render();};
   if($("#m_share"))$("#m_share").onclick=shareLink;
   if($("#m_pers"))$("#m_pers").onclick=()=>copyText(meLink(),"Personal link copied");
   if($("#o_share"))$("#o_share").onclick=shareLink;
