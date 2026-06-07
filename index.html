@@ -459,6 +459,8 @@ function recordHTML(f){return `<span class="rec"><span class="w">${f.w}</span>-<
 function championOwnerId(){const champ=(S.results.advanced.W||[])[0];if(!champ)return null;const e=Object.entries(S.assignments).find(([id,arr])=>arr.includes(champ));return e?e[0]:null;}
 function ownersOf(team){return Object.entries(S.assignments).filter(([id,arr])=>arr.includes(team)).map(([id])=>(S.participants.find(p=>p.id===id)||{}).name).filter(Boolean);}
 function coOwners(team,excludeId){return Object.entries(S.assignments).filter(([id,arr])=>id!==excludeId&&arr.includes(team)).map(([id])=>(S.participants.find(p=>p.id===id)||{}).name).filter(Boolean);}
+// "Sam Williams" -> "Sam W" (first name + last initial); single names unchanged.
+function shortName(n){const p=(n||"").trim().split(/\s+/);return p.length<2?(n||""):p[0]+" "+p[p.length-1][0].toUpperCase();}
 // Group matches with an unconfirmed API-suggested score (pending, no manual score yet).
 function pendingMatches(){const out=[];Object.keys(GROUPS).forEach(g=>{(S.results.group[g]||[]).forEach((m,i)=>{if(m&&m.source==='auto'&&m.pa!==''&&m.pb!==''&&(m.sa===''||m.sb===''))out.push({g,i,pa:Number(m.pa),pb:Number(m.pb)});});});return out;}
 function playerPoints(id){return (S.assignments[id]||[]).reduce((s,t)=>s+teamPoints(t),0);}
@@ -940,7 +942,7 @@ function viewMine(){
 }
 function viewFixtures(){
   const all=allFixtures().sort((a,b)=>a.sort-b.sort||a.g.localeCompare(b.g));
-  const owner=t=>ownersOf(t).join(" / ");
+  const owner=t=>ownersOf(t).map(shortName).join(" / ");
   const tag=t=>S.config.drawDone&&owner(t)?` <span class="grp">· ${esc(owner(t))}</span>`:"";
   const line=f=>{const res=f.score?`<span class="pts" style="font-size:14px">${f.score}</span>`:`<span class="note">${f.timeLabel||"vs"}</span>`;
     return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13.5px">
