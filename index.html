@@ -442,7 +442,7 @@ function groupPoints(t){
   });
   return p;
 }
-function progressionPoints(t){const st=stageReached(t);let p=0;for(let i=0;i<st;i++)p+=STAGES[i].pts;return p;}
+function progressionPoints(t){let p=0;for(let i=0;i<STAGES.length;i++){if((S.results.advanced[STAGES[i].key]||[]).includes(t))p+=STAGES[i].pts;else break;}return p;}
 function teamPoints(t){return groupPoints(t)+progressionPoints(t);}
 /* ---- Simple mode: wins/losses form instead of points (display only) ---- */
 function matchResultFor(team,g,i){
@@ -461,6 +461,7 @@ function ownersOf(team){return Object.entries(S.assignments).filter(([id,arr])=>
 function coOwners(team,excludeId){return Object.entries(S.assignments).filter(([id,arr])=>id!==excludeId&&arr.includes(team)).map(([id])=>(S.participants.find(p=>p.id===id)||{}).name).filter(Boolean);}
 // "Sam Williams" -> "Sam W" (first name + last initial); single names unchanged.
 function shortName(n){const p=(n||"").trim().split(/\s+/);return p.length<2?(n||""):p[0]+" "+p[p.length-1][0].toUpperCase();}
+function safeColor(c){return /^#[0-9a-fA-F]{6}$/.test((c||"").trim())?c.trim():"#22d37a";}
 // Group matches with an unconfirmed API-suggested score (pending, no manual score yet).
 function pendingMatches(){const out=[];Object.keys(GROUPS).forEach(g=>{(S.results.group[g]||[]).forEach((m,i)=>{if(m&&m.source==='auto'&&m.pa!==''&&m.pb!==''&&(m.sa===''||m.sb===''))out.push({g,i,pa:Number(m.pa),pb:Number(m.pb)});});});return out;}
 function playerPoints(id){return (S.assignments[id]||[]).reduce((s,t)=>s+teamPoints(t),0);}
@@ -655,7 +656,7 @@ const SupaDB = {
   async joinPool(name){
     const u=Auth.user();
     const {data,error}=await sb.from('participants')
-      .insert({pool_id:poolId,name,user_id:u?u.id:null,email:u?lc(u.email):null}).select('id').single();
+      .insert({pool_id:poolId,name,user_id:u?u.id:null}).select('id').single();
     if(error)throw error;return data.id;
   },
   async addParticipant(name){const {error}=await sb.from('participants').insert({pool_id:poolId,name});if(error)throw error;},
@@ -677,7 +678,7 @@ const SupaDB = {
     const c=snap.config||{};
     await sb.rpc('set_config',{p:poolId,patch:{header:c.header,accentColor:c.accentColor,pot:c.pot,prizes:c.prizes,scoring:c.scoring,drawDone:!!c.drawDone,signupsOpen:c.signupsOpen!==false}});
     const idMap={};
-    const partRows=(snap.participants||[]).map(p=>{const id=crypto.randomUUID();idMap[p.id]=id;return {id,pool_id:poolId,name:p.name,user_id:p.user_id||null,email:p.email||null};});
+    const partRows=(snap.participants||[]).map(p=>{const id=crypto.randomUUID();idMap[p.id]=id;return {id,pool_id:poolId,name:p.name};});
     if(partRows.length){const {error}=await sb.from('participants').insert(partRows);if(error)throw error;}
     const asg=[];Object.entries(snap.assignments||{}).forEach(([pid,teams])=>{const np=idMap[pid];if(np)(teams||[]).forEach(t=>asg.push({pool_id:poolId,participant_id:np,team:t}));});
     if(asg.length){const {error}=await sb.from('assignments').insert(asg);if(error)throw error;}
@@ -685,6 +686,8 @@ const SupaDB = {
     if(gr.length){const {error}=await sb.from('group_results').upsert(gr,{onConflict:'pool_id,grp,idx'});if(error)throw error;}
     const adv=[];Object.entries((snap.results||{}).advanced||{}).forEach(([st,teams])=>(teams||[]).forEach(t=>adv.push({pool_id:poolId,stage:st,team:t})));
     if(adv.length){const {error}=await sb.from('advanced').insert(adv);if(error)throw error;}
+    const pay=(snap._payments||[]).map(x=>({pool_id:poolId,participant_id:idMap[x.participant_id],amount:x.amount,paid:!!x.paid,paid_at:x.paid_at||null})).filter(x=>x.participant_id);
+    if(pay.length){const {error}=await sb.from('payments').upsert(pay,{onConflict:'pool_id,participant_id'});if(error)throw error;}
   },
   async loadPayments(){const {data,error}=await sb.from('payments').select('*').eq('pool_id',poolId);if(error)throw error;return data||[];},
   async setPayment(participant_id,patch){const {error}=await sb.from('payments').upsert(Object.assign({pool_id:poolId,participant_id,updated_at:new Date().toISOString()},patch),{onConflict:'pool_id,participant_id'});if(error)throw error;},
@@ -710,7 +713,7 @@ const DemoDB={
   async createPool({id,name,config,email}){const o=demoAll();const p=demoPool(o,id);p.pool={id,name,config,organiser_emails:[lc(email)]};demoWrite(o);return id;},
   async addOrganiser(email){const o=demoAll();const p=demoPool(o,poolId);p.pool.organiser_emails=Array.from(new Set([...(p.pool.organiser_emails||[]),lc(email)]));demoWrite(o);},
   async joinPool(name){const u=Auth.user();const o=demoAll();const p=demoPool(o,poolId);const id=uid();
-    p.participants.push({id,name,user_id:u?u.id:null,email:u?lc(u.email):null});demoWrite(o);return id;},
+    p.participants.push({id,name,user_id:u?u.id:null});demoWrite(o);return id;},
   async addParticipant(name){const o=demoAll();const p=demoPool(o,poolId);p.participants.push({id:uid(),name,user_id:null,email:null});demoWrite(o);},
   async removeParticipant(id){const o=demoAll();const p=demoPool(o,poolId);p.participants=p.participants.filter(x=>x.id!==id);p.assignments=p.assignments.filter(a=>a.participant_id!==id);demoWrite(o);},
   async runDraw(arr){const o=demoAll();const p=demoPool(o,poolId);p.assignments=arr.map(x=>({participant_id:x.participant_id,team:x.team}));
@@ -727,10 +730,11 @@ const DemoDB={
     p.pool.config={...p.pool.config,drawDone:false,signupsOpen:true};demoWrite(o);},
   async importPool(snap){const o=demoAll();const p=demoPool(o,poolId);const c=snap.config||{};
     p.pool.config={...p.pool.config,header:c.header,accentColor:c.accentColor,pot:c.pot,prizes:c.prizes,scoring:c.scoring,drawDone:!!c.drawDone,signupsOpen:c.signupsOpen!==false};
-    const idMap={};p.participants=(snap.participants||[]).map(pp=>{const id=uid();idMap[pp.id]=id;return {id,name:pp.name,user_id:pp.user_id||null,email:pp.email||null};});
+    const idMap={};p.participants=(snap.participants||[]).map(pp=>{const id=uid();idMap[pp.id]=id;return {id,name:pp.name,user_id:null};});
     p.assignments=[];Object.entries(snap.assignments||{}).forEach(([pid,teams])=>{const np=idMap[pid];if(np)(teams||[]).forEach(t=>p.assignments.push({participant_id:np,team:t}));});
     p.group=[];Object.entries((snap.results||{}).group||{}).forEach(([g,arr])=>(arr||[]).forEach((m,i)=>{if(m&&(m.sa!==""||m.sb!==""||m.date))p.group.push({grp:g,idx:i,score_a:m.sa===""?null:Number(m.sa),score_b:m.sb===""?null:Number(m.sb),match_date:m.date||null,pending_a:null,pending_b:null,source:m.source||'manual'});}));
     p.advanced=[];Object.entries((snap.results||{}).advanced||{}).forEach(([st,teams])=>(teams||[]).forEach(t=>p.advanced.push({stage:st,team:t})));
+    p.payments=(snap._payments||[]).map(x=>({pool_id:poolId,participant_id:idMap[x.participant_id],amount:x.amount,paid:!!x.paid,paid_at:x.paid_at||null})).filter(x=>x.participant_id);
     demoWrite(o);},
   async loadPayments(){const o=demoAll();const p=demoPool(o,poolId);return (p.payments||[]).slice();},
   async setPayment(participant_id,patch){const o=demoAll();const p=demoPool(o,poolId);p.payments=p.payments||[];let row=p.payments.find(r=>r.participant_id===participant_id);if(!row){row={pool_id:poolId,participant_id,amount:null,paid:false,paid_at:null};p.payments.push(row);}Object.assign(row,patch);demoWrite(o);},
@@ -766,7 +770,7 @@ function renderAuth(){
 function header(){
   $("#evtName").textContent = (S&&S.config.header) || "World Cup 2026 Sweepstake";
   $("#evtSub").textContent = S ? (S.config.pot?("Prize pot: "+S.config.pot):"Office sweepstake") : "";
-  document.documentElement.style.setProperty("--accent",(S&&S.config.accentColor)||"#22d37a");
+  document.documentElement.style.setProperty("--accent",safeColor(S&&S.config.accentColor));
   const pill=$("#statePill");
   if(!S){pill.textContent="—";pill.className="pill";}
   else if(!S.config.drawDone){pill.textContent=S.config.signupsOpen?"Signups open":"Signups closed";pill.className="pill";}
@@ -870,11 +874,11 @@ function viewBoard(){
   const simple=!!S.config.simpleMode;
   const ranked=standings().map((r,i)=>({...r,rank:i+1}));
   const last=ranked.length>1?ranked[ranked.length-1].id:null;const champ=(S.results.advanced.W||[])[0];
-  const champOwner=simple?championOwnerId():null;
+  const champOwners=(simple&&champ)?Object.entries(S.assignments).filter(([id,a])=>a.includes(champ)).map(([id])=>id):[];
   const groupPhase=S.config.drawDone&&currentStageIndex()===0;
   const card=(r)=>{
     const top=r.rank===1?"top":"";const spoon=(r.id===last&&S.config.drawDone)?"spoon":"";const me=r.id===meId?"me":"";
-    const crown=simple?(r.id===champOwner?' 🏆':''):(r.rank===1&&r.pts>0?' 👑':'');
+    const crown=simple?(champOwners.includes(r.id)?' 🏆':''):(r.rank===1&&r.pts>0?' 👑':'');
     const teams=(S.assignments[r.id]||[]);
     const strip=teams.slice()
       .sort((a,b)=>(isOut(a)-isOut(b))||(teamPoints(b)-teamPoints(a))||a.localeCompare(b))
@@ -902,9 +906,9 @@ function viewBoard(){
     const meRow=ranked.find(r=>r.id===meId);
     cards=`<div class="pinwrap">${card(meRow)}</div><div class="note" style="text-align:center;margin:6px 0 2px">— full leaderboard —</div>`+ranked.filter(r=>r.id!==meId).map(card).join("");
   }else{cards=ranked.map(card).join("");}
-  const ownerName=champOwner?(S.participants.find(p=>p.id===champOwner)||{}).name:null;
+  const ownerNames=champ?ownersOf(champ).join(" & "):"";
   const lead=simple
-    ?(champ?`🏆 Winner: <b>${esc(ownerName||'?')}</b> — owns ${flag(champ)} ${esc(champ)}.`:(S.config.drawDone?"Whoever owns the World Cup winner takes it. Wins &amp; losses so far:":"Draw not run yet."))
+    ?(champ?`🏆 Winner: <b>${esc(ownerNames||'?')}</b> — owns ${flag(champ)} ${esc(champ)}.`:(S.config.drawDone?"Whoever owns the World Cup winner takes it. Wins &amp; losses so far:":"Draw not run yet."))
     :(S.config.drawDone?(champ?`Champions: ${flag(champ)} ${esc(champ)}. Final standings.`:"Live standings. Updates as results go in."):"Draw not run yet.");
   return `<div class="card"><h2>Leaderboard</h2>
     <p class="lead">${lead}</p>
@@ -1082,7 +1086,7 @@ function viewOrg(){
   html+=`<div class="card"><h2>Event & prizes</h2>
     <div class="grid2">
       <label class="fld"><span class="lbl">Event title</span><input id="c_header" value="${esc(S.config.header)}"></label>
-      <label class="fld"><span class="lbl">Accent colour</span><input type="color" id="c_col" value="${S.config.accentColor}"></label>
+      <label class="fld"><span class="lbl">Accent colour</span><input type="color" id="c_col" value="${esc(S.config.accentColor)}"></label>
       <label class="fld"><span class="lbl">Prize pot</span><input id="c_pot" value="${esc(S.config.pot)}"></label>
       <label class="fld"><span class="lbl">1st place prize</span><input id="c_p1" value="${esc(S.config.prizes.first)}"></label>
       <label class="fld"><span class="lbl">2nd place prize</span><input id="c_p2" value="${esc(S.config.prizes.second)}"></label>
@@ -1155,7 +1159,7 @@ function wire(){
 
   document.querySelectorAll("input[data-g]").forEach(inp=>inp.onchange=()=>{
     const g=inp.dataset.g,i=+inp.dataset.i,s=inp.dataset.s;const v=inp.value.trim();
-    const patch={};patch[s==="a"?"score_a":"score_b"]=v===""?null:Number(v);
+    const patch={source:"manual",pending_a:null,pending_b:null};patch[s==="a"?"score_a":"score_b"]=v===""?null:Number(v);
     guard(async()=>{await DB.upsertGroup(g,i,patch);},"Saved");
   });
   document.querySelectorAll("input[data-gd]").forEach(inp=>inp.onchange=()=>{
@@ -1177,7 +1181,7 @@ function wire(){
   });
   if($("#o_autoR32"))$("#o_autoR32").onclick=()=>{
     const r=autoQualifyR32();if(!r.ok){toast(r.msg);return;}
-    guard(async()=>{await DB.setStage("R32",r.teams);},"Round of 32 set (32 teams)");
+    guard(async()=>{await DB.setStage("R32",r.teams);for(const k of ["R16","QF","SF","F","W"])await DB.setStage(k,[]);},"Round of 32 set (later rounds cleared)");
   };
 
   document.querySelectorAll("[data-pay-paid]").forEach(cb=>cb.onchange=async()=>{
@@ -1199,9 +1203,9 @@ function wire(){
   if($("#org_add"))$("#org_add").onclick=()=>{const e=lc($("#org_email").value.trim());if(!e){toast("Enter an email");return;}
     guard(async()=>{await DB.addOrganiser(e);},"Organiser added");};
 
-  if($("#d_exp"))$("#d_exp").onclick=()=>{
-    const blob=new Blob([JSON.stringify(S,null,2)],{type:"application/json"});
-    const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  if($("#d_exp"))$("#d_exp").onclick=async()=>{
+    let pay=[];try{pay=await DB.loadPayments();}catch(e){}
+    const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(Object.assign({},S,{_payments:pay}),null,2)],{type:"application/json"}));
     a.download=(S.config.header||"sweepstake").replace(/\W+/g,"_")+"_backup.json";a.click();
   };
   if($("#d_imp"))$("#d_imp").onclick=()=>{
