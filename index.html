@@ -941,7 +941,7 @@ function viewMine(){
 function viewFixtures(){
   const all=allFixtures().sort((a,b)=>a.sort-b.sort||a.g.localeCompare(b.g));
   const owner=t=>ownersOf(t).join(" / ");
-  const tag=t=>S.config.drawDone&&owner(t)?` <span class="grp">${esc(owner(t))}</span>`:"";
+  const tag=t=>S.config.drawDone&&owner(t)?` <span class="grp">· ${esc(owner(t))}</span>`:"";
   const line=f=>{const res=f.score?`<span class="pts" style="font-size:14px">${f.score}</span>`:`<span class="note">${f.timeLabel||"vs"}</span>`;
     return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13.5px">
       <span class="grp" style="width:18px">${f.g}</span>
