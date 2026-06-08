@@ -386,6 +386,7 @@ let S = null;          // assembled view-model for the current pool
 let meId = null;       // my participant id in this pool (from auth)
 let poolId = null;     // current pool slug
 let unsub = null;      // realtime unsubscribe
+let resultsView = 'date';  // organiser results view: 'date' | 'group'
 let PAY = null;        // organiser-only payments cache (lazy-loaded, kept out of the public S)
 let tab = "join";
 
@@ -1028,6 +1029,20 @@ function viewPayments(){
     ${rows.length&&outstanding<=0?`<div class="good" style="margin-top:12px">Everyone's paid up 🎉</div>`:(rows.filter(r=>!r.paid).length?`<p class="note">Still to pay: ${esc(rows.filter(r=>!r.paid).map(r=>r.name).join(", "))}</p>`:"")}
   </div>`;
 }
+// One score-entry row for a group match (g, idx). Shared by the "by group" and
+// "by date" views so both are identical — same data-keyed inputs, same API
+// pending/confirm tag — and every existing handler works regardless of order.
+function resultRow(g,i){
+  const c=GROUP_COMBOS[i],a=GROUPS[g][c[0]],b=GROUPS[g][c[1]];
+  const m=(S.results.group[g]&&S.results.group[g][i])||{sa:"",sb:"",pa:"",pb:"",source:""};
+  const dval=fxDate(g,i);
+  const pend=(m.pa!==""&&m.pb!==""&&m.source==="auto"&&(m.sa===""||m.sb===""))
+    ? `<span class="pendtag">API: ${m.pa}–${m.pb} <a href="#" data-cfm-g="${g}" data-cfm-i="${i}" data-pa="${m.pa}" data-pb="${m.pb}">confirm</a></span>`:"";
+  return `<div class="grouprow"><div class="vs">${flag(a)} ${esc(a)} <span class="note">v</span> ${esc(b)} ${flag(b)}${pend}</div>
+    <input class="gd" type="date" aria-label="Date ${esc(a)} v ${esc(b)}" data-gd="${g}" data-i="${i}" value="${dval}">
+    <input type="number" min="0" inputmode="numeric" aria-label="${esc(a)} score" data-g="${g}" data-i="${i}" data-s="a" value="${m.sa}" placeholder="-">
+    <input type="number" min="0" inputmode="numeric" aria-label="${esc(b)} score" data-g="${g}" data-i="${i}" data-s="b" value="${m.sb}" placeholder="-"></div>`;
+}
 function viewOrg(){
   const u=Auth.user();
   if(!u)return `<div class="card"><h2>Organiser</h2><p class="lead">Sign in to manage this sweepstake.</p>
@@ -1056,21 +1071,24 @@ function viewOrg(){
   if(S.config.drawDone){
     html+=`<div class="card"><h2>Group results</h2><p class="lead">Enter scores after each round. Points update instantly. Auto-fetched scores (if you set up the API) show as suggestions to confirm.</p>${(()=>{const pd=pendingMatches();return pd.length?`<div class="good" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px"><span>🔵 ${pd.length} new result${pd.length===1?'':'s'} from the API to review below.</span><button class="btn sm" id="o_cfmall">Confirm all ${pd.length}</button></div>`:'';})()}`;
     if(lc(u.email)===lc(S.config.chatPoster||"")) html+=`<div class="row" style="margin:0 0 12px"><button class="btn sm" id="o_postchat">📣 Post new results to Chat</button> <span class="note">Sends confirmed results not yet posted to your Chat space.</span></div>`;
-    Object.keys(GROUPS).forEach(g=>{
-      html+=`<fieldset class="grp-set"><legend>Group ${g}</legend>`;
-      GROUP_COMBOS.forEach((c,i)=>{
-        const a=GROUPS[g][c[0]],b=GROUPS[g][c[1]];
-        const m=(S.results.group[g]&&S.results.group[g][i])||{sa:"",sb:"",pa:"",pb:"",source:""};
-        const dval=fxDate(g,i);
-        const pend=(m.pa!==""&&m.pb!==""&&m.source==="auto"&&(m.sa===""||m.sb===""))
-          ? `<span class="pendtag">API: ${m.pa}–${m.pb} <a href="#" data-cfm-g="${g}" data-cfm-i="${i}" data-pa="${m.pa}" data-pb="${m.pb}">confirm</a></span>`:"";
-        html+=`<div class="grouprow"><div class="vs">${flag(a)} ${esc(a)} <span class="note">v</span> ${esc(b)} ${flag(b)}${pend}</div>
-          <input class="gd" type="date" aria-label="Date ${esc(a)} v ${esc(b)}" data-gd="${g}" data-i="${i}" value="${dval}">
-          <input type="number" min="0" inputmode="numeric" aria-label="${esc(a)} score" data-g="${g}" data-i="${i}" data-s="a" value="${m.sa}" placeholder="-">
-          <input type="number" min="0" inputmode="numeric" aria-label="${esc(b)} score" data-g="${g}" data-i="${i}" data-s="b" value="${m.sb}" placeholder="-"></div>`;
+    html+=`<div class="row" style="margin:0 0 12px;gap:6px;align-items:center"><span class="note">View results:</span>
+      <button class="btn sm${resultsView==='date'?'':' ghost'}" data-rv="date">By date</button>
+      <button class="btn sm${resultsView==='group'?'':' ghost'}" data-rv="group">By group</button></div>`;
+    if(resultsView==='group'){
+      Object.keys(GROUPS).forEach(g=>{
+        html+=`<fieldset class="grp-set"><legend>Group ${g}</legend>`;
+        GROUP_COMBOS.forEach((c,i)=>{ html+=resultRow(g,i); });
+        html+=`</fieldset>`;
       });
-      html+=`</fieldset>`;
-    });
+    } else {
+      const fxs=allFixtures().sort((a,b)=>a.sort-b.sort);
+      let lastDay=null;
+      fxs.forEach(f=>{
+        if(f.dayKey!==lastDay){ if(lastDay!==null)html+=`</fieldset>`; html+=`<fieldset class="grp-set"><legend>${esc(f.dayLabel)}</legend>`; lastDay=f.dayKey; }
+        html+=resultRow(f.g,f.i);
+      });
+      if(lastDay!==null)html+=`</fieldset>`;
+    }
     html+=`</div>`;
 
     html+=`<div class="card"><h2>Knockout progression</h2>
@@ -1181,6 +1199,7 @@ function wire(){
     const r=await DB.postResults();const n=r&&r.posted!=null?r.posted:0;
     toast(r&&r.demo?`Demo: ${n} result${n===1?'':'s'} would post (no Chat in demo)`:(n?`Posted ${n} result${n===1?'':'s'} to Chat`:"Nothing new to post"));
   });
+  document.querySelectorAll("[data-rv]").forEach(b=>b.onclick=()=>{resultsView=b.dataset.rv;render();});
   document.querySelectorAll("input[data-ko]").forEach(cb=>cb.onchange=()=>{
     const k=cb.dataset.ko,t=cb.value;const ki=STAGES.findIndex(z=>z.key===k);
     if(cb.checked)guard(async()=>{await DB.setAdvanced(t,[k],[]);});
