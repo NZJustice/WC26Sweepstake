@@ -460,6 +460,33 @@ function recordHTML(f){return `<span class="rec"><span class="w">${f.w}</span>-<
 function championOwnerId(){const champ=(S.results.advanced.W||[])[0];if(!champ)return null;const e=Object.entries(S.assignments).find(([id,arr])=>arr.includes(champ));return e?e[0]:null;}
 function ownersOf(team){return Object.entries(S.assignments).filter(([id,arr])=>arr.includes(team)).map(([id])=>(S.participants.find(p=>p.id===id)||{}).name).filter(Boolean);}
 function coOwners(team,excludeId){return Object.entries(S.assignments).filter(([id,arr])=>id!==excludeId&&arr.includes(team)).map(([id])=>(S.participants.find(p=>p.id===id)||{}).name).filter(Boolean);}
+/* ===== Second-chance draw (knockout re-roll) — pure overlay, see SECOND_CHANCE.md.
+   Inert unless config.secondChanceEnabled; assignments live in config.secondChance
+   (written via set_config), so scoring/draw/leaderboard logic is untouched. ===== */
+function scEnabled(){return !!(S&&S.config.secondChanceEnabled);}
+function scDraw(){return (scEnabled()&&S.config.secondChance&&S.config.secondChance.assignments)||null;}
+function scTeamOf(pid){const d=scDraw();return (d&&d[pid])||null;}
+function scOwnersOf(team){const d=scDraw();if(!d)return [];return Object.entries(d).filter(([id,t])=>t===team).map(([id])=>(S.participants.find(p=>p.id===id)||{}).name).filter(Boolean);}
+// Players none of whose teams made the Round of 32.
+function scEligible(){const r32=new Set(S.results.advanced.R32||[]);return S.participants.filter(p=>{const tt=S.assignments[p.id]||[];return tt.length&&!tt.some(t=>r32.has(t));});}
+// Random spread: shuffled players dealt one-by-one to the surviving team with the
+// fewest sub-owners so far (ties broken randomly); never a team they already own.
+function scRunDraw(){
+  const r32=(S.results.advanced.R32||[]).slice();
+  const elig=scEligible().slice();
+  for(let i=elig.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[elig[i],elig[j]]=[elig[j],elig[i]];}
+  const n={};r32.forEach(t=>n[t]=0);
+  const out={};
+  elig.forEach(p=>{
+    const own=new Set(S.assignments[p.id]||[]);
+    const cand=r32.filter(t=>!own.has(t));if(!cand.length)return;
+    const min=Math.min(...cand.map(t=>n[t]));
+    const pool=cand.filter(t=>n[t]===min);
+    const team=pool[Math.floor(Math.random()*pool.length)];
+    out[p.id]=team;n[team]++;
+  });
+  return out;
+}
 // "Sam Williams" -> "Sam W" (first name + last initial); single names unchanged.
 function shortName(n){const p=(n||"").trim().split(/\s+/);return p.length<2?(n||""):p[0]+" "+p[p.length-1][0].toUpperCase();}
 function safeColor(c){return /^#[0-9a-fA-F]{6}$/.test((c||"").trim())?c.trim():"#22d37a";}
@@ -910,9 +937,11 @@ function viewBoard(){
     cards=`<div class="pinwrap">${card(meRow)}</div><div class="note" style="text-align:center;margin:6px 0 2px">— full leaderboard —</div>`+ranked.filter(r=>r.id!==meId).map(card).join("");
   }else{cards=ranked.map(card).join("");}
   const ownerNames=champ?ownersOf(champ).join(" & "):"";
+  const scWinners=champ?scOwnersOf(champ):[];
+  const scWin=scWinners.length?` 🎲 Special prize: <b>${esc(scWinners.join(" & "))}</b> — second-chance owner${scWinners.length===1?'':'s'} of ${esc(champ)}.`:'';
   const lead=simple
-    ?(champ?`🏆 Winner: <b>${esc(ownerNames||'?')}</b> — owns ${flag(champ)} ${esc(champ)}.`:(S.config.drawDone?"Whoever owns the World Cup winner takes it. Wins &amp; losses so far:":"Draw not run yet."))
-    :(S.config.drawDone?(champ?`Champions: ${flag(champ)} ${esc(champ)}. Final standings.`:"Live standings. Updates as results go in."):"Draw not run yet.");
+    ?(champ?`🏆 Winner: <b>${esc(ownerNames||'?')}</b> — owns ${flag(champ)} ${esc(champ)}.${scWin}`:(S.config.drawDone?"Whoever owns the World Cup winner takes it. Wins &amp; losses so far:":"Draw not run yet."))
+    :(S.config.drawDone?(champ?`Champions: ${flag(champ)} ${esc(champ)}. Final standings.${scWin}`:"Live standings. Updates as results go in."):"Draw not run yet.");
   return `<div class="card"><h2>Leaderboard</h2>
     <p class="lead">${lead}</p>
     ${cards}
@@ -936,6 +965,10 @@ function viewMine(){
       return `<div style="font-size:13px;color:var(--ink-dim);padding:2px 0">${f.dayLabel}${f.timeLabel?" · "+f.timeLabel:""} v ${flag(opp)} ${esc(opp)}${res}</div>`;}).join("");
     return `<div style="margin-bottom:12px">${teamChip(t)}${statusTag(t)} <span class="note">${simple?teamPips(t):teamPoints(t)+' pts'}</span>${(()=>{const sh=coOwners(t,meId);return sh.length?` <span class="grp">· shared with ${esc(sh.join(", "))}</span>`:'';})()}${fx}</div>`;
   }).join("")||'<div class="empty">No teams yet — waiting on the draw.</div>';
+  const scT=scTeamOf(meId);
+  const scCo=scT?scOwnersOf(scT).filter(n=>!me||n!==me.name):[];
+  const scBlock=scT?`<div style="margin-top:14px"><div class="note">🎲 Second chance</div>
+    <div style="margin-top:6px">${teamChip(scT)}${statusTag(scT)} <span class="grp">· special prize if ${esc(scT)} wins the cup${scCo.length?` (with ${esc(scCo.join(", "))})`:''}</span></div></div>`:'';
   return `<div class="card"><h2>${esc(me.name)}</h2>
     <div class="stat">
       <div class="b"><div class="n">${simple?(function(){const f=playerForm(meId);return f.w+'-'+f.d+'-'+f.l;})():playerPoints(meId)}</div><div class="l">${simple?'W-D-L':'Points'}</div></div>
@@ -943,7 +976,7 @@ function viewMine(){
       <div class="b"><div class="n">${teams.filter(t=>!isOut(t)).length}/${teams.length}</div><div class="l">Teams still in</div></div>
     </div>
     ${upcoming?`<div class="good" style="margin-top:14px">Next up: ${flag(upcoming.t0)} ${esc(upcoming.t0)} v ${esc(upcoming.t1)} ${flag(upcoming.t1)} &middot; ${upcoming.dayLabel}${upcoming.timeLabel?", "+upcoming.timeLabel:""}</div>`:""}
-    <div style="margin-top:14px">${blocks}</div>
+    <div style="margin-top:14px">${blocks}</div>${scBlock}
     <div class="row"><button class="btn ghost sm" id="m_share">Copy invite link</button>${guest?`<button class="btn ghost sm" id="m_pers">Copy my personal link</button>`:""}</div>
     <p class="note">${guest?"You joined as a guest — bookmark your personal link to return on any device, or sign in with Google to sync automatically.":"Signed in, your teams follow you on any device — no link needed."}</p></div>`;
 }
@@ -970,7 +1003,8 @@ function viewAlive(){
   const alive=TEAMS.map(t=>t.id).filter(t=>!isOut(t));
   const out=TEAMS.map(t=>t.id).filter(t=>isOut(t));
   const owner=t=>ownersOf(t).join(" / ");
-  const chip=t=>`<span class="team">${flag(t)} ${esc(t)} <span class="grp">${esc(owner(t)||groupOf(t))}</span>${statusTag(t)}</span>`;
+  const chip=t=>{const sub=scOwnersOf(t).map(shortName);
+    return `<span class="team">${flag(t)} ${esc(t)} <span class="grp">${esc(owner(t)||groupOf(t))}</span>${sub.length?` <span class="grp">🎲 ${esc(sub.join(", "))}</span>`:''}${statusTag(t)}</span>`;};
   return `<div class="card"><h2>Teams still in (${alive.length})</h2>
     <p class="lead">Chip shows the owner once the draw is done.</p>
     <div>${alive.map(chip).join("")||'<span class="empty">None</span>'}</div></div>
@@ -1095,6 +1129,14 @@ function viewOrg(){
       <p class="lead">Tick the teams that reached each stage; bonuses apply automatically.</p>
       <button class="btn ghost sm" id="o_autoR32">Auto-qualify Round of 32 from group results</button>
       <p class="note">Fills R32 with the 12 group winners, 12 runners-up and 8 best third-placed teams (needs all group scores in). You can still adjust by hand.</p>`;
+    if(scEnabled()){
+      const r32n=(S.results.advanced.R32||[]).length,scd=scDraw(),scEl=scEligible();
+      const orphans=scd?Object.entries(scd).filter(([id,t])=>!(S.results.advanced.R32||[]).includes(t)).length:0;
+      html+=`<div class="warn" style="margin:10px 0"><b>🎲 Second-chance draw</b> — players whose team is out get a surviving team as sub-owners; the champion's sub-owner(s) win a special prize. Original owners keep the main prize.
+        ${scd?`<div class="note" style="margin-top:4px">Drawn ${esc(String(S.config.secondChance.drawnAt||"").slice(0,10))} · ${Object.keys(scd).length} player${Object.keys(scd).length===1?'':'s'} assigned.${orphans?` <span style="color:var(--bad)">⚠ ${orphans} assigned to a team no longer in R32 — re-run.</span>`:''}</div>`:''}
+        <div class="row" style="margin-top:8px"><button class="btn sm${scd?' ghost':''}" id="o_scdraw" ${r32n===32?'':'disabled'}>${scd?'Re-run':'Run'} second-chance draw (${scEl.length} eligible)</button></div>
+        ${r32n===32?'':`<div class="note" style="margin-top:4px">Needs all 32 Round-of-32 teams ticked first (${r32n}/32).</div>`}</div>`;
+    }
     STAGES.forEach((s,si)=>{
       const prev=si===0?TEAMS.map(t=>t.id):(S.results.advanced[STAGES[si-1].key]||[]);
       const sel=S.results.advanced[s.key]||[];
@@ -1208,6 +1250,15 @@ function wire(){
   if($("#o_autoR32"))$("#o_autoR32").onclick=()=>{
     const r=autoQualifyR32();if(!r.ok){toast(r.msg);return;}
     guard(async()=>{await DB.setStage("R32",r.teams);for(const k of ["R16","QF","SF","F","W"])await DB.setStage(k,[]);},"Round of 32 set (later rounds cleared)");
+  };
+  if($("#o_scdraw"))$("#o_scdraw").onclick=()=>{
+    const run=()=>guard(async()=>{const a=scRunDraw();await DB.setConfig({secondChance:{drawnAt:new Date().toISOString(),assignments:a}});},"Second-chance draw done");
+    if(scDraw()){
+      modal(`<h2 style="font-family:Anton;font-weight:400">Re-run second-chance draw?</h2>
+        <p class="lead">This replaces the current second-chance assignments with a fresh random draw.</p>
+        <div class="row"><button class="btn danger" id="sc_go">Yes, re-run</button><button class="btn ghost" onclick="closeModal()">Cancel</button></div>`);
+      $("#sc_go").onclick=()=>{closeModal();run();};
+    } else run();
   };
 
   document.querySelectorAll("[data-pay-paid]").forEach(cb=>cb.onchange=async()=>{
