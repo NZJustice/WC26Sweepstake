@@ -693,6 +693,7 @@ const SupaDB = {
   async setConfig(patch){const {error}=await sb.rpc('set_config',{p:poolId,patch});if(error)throw error;},
   async upsertGroup(g,i,patch){const {error}=await sb.rpc('upsert_group',{p:poolId,g,i,patch});if(error)throw error;},
   async postResults(){const {data,error}=await sb.functions.invoke('post-results',{body:{pool_id:poolId}});if(error){let m="Couldn't post to Chat";try{const j=await error.context.json();if(j&&j.error)m=j.error;}catch(_){}throw new Error(m);}return data;},
+  async runSync(){const {data,error}=await sb.functions.invoke('sync-results',{body:{}});if(error){let m="Sync failed";try{const j=await error.context.json();if(j&&j.error)m=j.error;}catch(_){}throw new Error(m);}return data;},
   async setStage(stage,teams){
     await sb.from('advanced').delete().eq('pool_id',poolId).eq('stage',stage);
     if(teams.length)await sb.from('advanced').insert(teams.map(t=>({pool_id:poolId,stage,team:t})));
@@ -768,6 +769,7 @@ const DemoDB={
   async loadPayments(){const o=demoAll();const p=demoPool(o,poolId);return (p.payments||[]).slice();},
   async setPayment(participant_id,patch){const o=demoAll();const p=demoPool(o,poolId);p.payments=p.payments||[];let row=p.payments.find(r=>r.participant_id===participant_id);if(!row){row={pool_id:poolId,participant_id,amount:null,paid:false,paid_at:null};p.payments.push(row);}Object.assign(row,patch);demoWrite(o);},
   async postResults(){const o=demoAll();const p=demoPool(o,poolId);let n=0;(p.group||[]).forEach(r=>{if(r.score_a!=null&&r.score_b!=null&&!r.posted)n++;});return {ok:true,posted:n,demo:true};},
+  async runSync(){return {ok:true,finished:0,written:0,demo:true};},
   subscribe(id,cb){const h=()=>cb();window.addEventListener("wc-demo-change",h);window.addEventListener("storage",h);
     return ()=>{window.removeEventListener("wc-demo-change",h);window.removeEventListener("storage",h);};}
 };
@@ -1104,6 +1106,7 @@ function viewOrg(){
 
   if(S.config.drawDone){
     html+=`<div class="card"><h2>Group results</h2><p class="lead">Enter scores after each round. Points update instantly. Auto-fetched scores (if you set up the API) show as suggestions to confirm.</p>${(()=>{const pd=pendingMatches();return pd.length?`<div class="good" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px"><span>🔵 ${pd.length} new result${pd.length===1?'':'s'} from the API to review below.</span><button class="btn sm" id="o_cfmall">Confirm all ${pd.length}</button></div>`:'';})()}`;
+    if(CONFIGURED) html+=`<div class="row" style="margin:0 0 12px"><button class="btn ghost sm" id="o_syncnow">🔄 Sync results from API now</button> <span class="note">Pulls finished match scores on demand, then use Confirm above.</span></div>`;
     if(lc(u.email)===lc(S.config.chatPoster||"")) html+=`<div class="row" style="margin:0 0 12px"><button class="btn sm" id="o_postchat">📣 Post new results to Chat</button> <span class="note">Sends confirmed results not yet posted to your Chat space.</span></div>`;
     html+=`<div class="row" style="margin:0 0 12px;gap:6px;align-items:center"><span class="note">View results:</span>
       <button class="btn sm${resultsView==='date'?'':' ghost'}" data-rv="date">By date</button>
@@ -1240,6 +1243,10 @@ function wire(){
   if($("#o_postchat"))$("#o_postchat").onclick=()=>guard(async()=>{
     const r=await DB.postResults();const n=r&&r.posted!=null?r.posted:0;
     toast(r&&r.demo?`Demo: ${n} result${n===1?'':'s'} would post (no Chat in demo)`:(n?`Posted ${n} result${n===1?'':'s'} to Chat`:"Nothing new to post"));
+  });
+  if($("#o_syncnow"))$("#o_syncnow").onclick=()=>guard(async()=>{
+    const r=await DB.runSync();const n=r&&r.finished!=null?r.finished:0;
+    toast(r&&r.demo?"Demo: no live API to sync":(n?`Synced — ${n} finished match${n===1?'':'es'} found`:"Synced — no finished matches yet"));
   });
   document.querySelectorAll("[data-rv]").forEach(b=>b.onclick=()=>{resultsView=b.dataset.rv;render();});
   document.querySelectorAll("input[data-ko]").forEach(cb=>cb.onchange=()=>{
