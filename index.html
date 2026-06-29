@@ -1100,13 +1100,58 @@ function koMatchCard(m){
     ${row(koCanon(m.home),m.sh,fin&&m.winner==="HOME_TEAM")}
     ${row(koCanon(m.away),m.sa,fin&&m.winner==="AWAY_TEAM")}</div>`;
 }
+/* Official 2026 knockout bracket. Display order of each round (top→bottom),
+   and the slot linkage, from the FIFA bracket (R16 89←R32 74+77, 90←73+75, …). */
+const KO_R32_ORDER=[74,77,73,75,83,84,81,82,76,78,79,80,86,88,85,87];
+const KO_R16_ORDER=[89,90,93,94,91,92,95,96];
+const KO_QF_ORDER=[97,98,99,100];
+const KO_SF_ORDER=[101,102];
+const KO_F_ORDER=[103];
+// Each R32 slot is identifiable by its group winner(1X)/runner-up(2X) team(s).
+const KO_R32_SLOTS={73:['2A','2B'],74:['1E'],75:['1F'],76:['1C'],77:['1I'],78:['2E','2I'],79:['1A'],80:['1L'],81:['1D'],82:['1G'],83:['2K','2L'],84:['1H'],85:['1B'],86:['1J'],87:['1K'],88:['2D','2G']};
+const KO_FEEDERS={89:[74,77],90:[73,75],91:[76,78],92:[79,80],93:[83,84],94:[81,82],95:[86,88],96:[85,87],97:[89,90],98:[93,94],99:[91,92],100:[95,96],101:[97,98],102:[99,100],103:[101,102]};
+// Map each knockout match to its true bracket slot and return matches per round in
+// bracket display order. Returns null (→ caller falls back to date order) if group
+// results aren't all in yet, so it never renders a broken/partial tree.
+function orderBracket(byStage){
+  try{
+    const win={},run={};
+    for(const g of Object.keys(GROUPS)){ if(!groupComplete(g))return null; const tab=groupTable(g); win[g]=tab[0].t; run[g]=tab[1].t; }
+    const teamFor=l=>l[0]==='1'?win[l[1]]:run[l[1]];
+    const has=(m,t)=>!!t&&(koCanon(m.home)===t||koCanon(m.away)===t);
+    const slot={};
+    const r32=(byStage.LAST_32||[]).slice();
+    for(const [s,labels] of Object.entries(KO_R32_SLOTS)){
+      const need=labels.map(teamFor); if(need.some(t=>!t))return null;
+      const m=r32.find(x=>need.every(t=>has(x,t))); if(m)slot[s]=m;
+    }
+    if(KO_R32_ORDER.some(s=>!slot[s]))return null;        // couldn't place every R32 match → fall back
+    const winnerOf=s=>{const m=slot[s];if(!m)return null;return m.winner==='HOME_TEAM'?koCanon(m.home):m.winner==='AWAY_TEAM'?koCanon(m.away):null;};
+    const place=(key,order)=>{
+      const list=(byStage[key]||[]).slice(),used=new Set();
+      for(const s of order){const exp=KO_FEEDERS[s].map(winnerOf).filter(Boolean);
+        const m=exp.length?list.find(x=>!used.has(x)&&exp.some(t=>has(x,t))):null; if(m){slot[s]=m;used.add(m);}}
+      const rem=list.filter(x=>!used.has(x)).sort((a,b)=>new Date(a.date||0)-new Date(b.date||0));
+      for(const s of order){if(!slot[s]&&rem.length)slot[s]=rem.shift();}
+    };
+    place('LAST_16',KO_R16_ORDER);place('QUARTER_FINALS',KO_QF_ORDER);place('SEMI_FINALS',KO_SF_ORDER);place('FINAL',KO_F_ORDER);
+    return {
+      LAST_32:KO_R32_ORDER.map(s=>slot[s]).filter(Boolean),
+      LAST_16:KO_R16_ORDER.map(s=>slot[s]).filter(Boolean),
+      QUARTER_FINALS:KO_QF_ORDER.map(s=>slot[s]).filter(Boolean),
+      SEMI_FINALS:KO_SF_ORDER.map(s=>slot[s]).filter(Boolean),
+      FINAL:KO_F_ORDER.map(s=>slot[s]).filter(Boolean)
+    };
+  }catch(e){return null;}
+}
 function viewBracketGraphic(){
   const ms=S.config.knockoutMatches||[];
   if(!ms.length)return viewBracket();
   const ORDER=[["LAST_32","Round of 32"],["LAST_16","Round of 16"],["QUARTER_FINALS","Quarter-final"],["SEMI_FINALS","Semi-final"],["FINAL","Final"]];
   const byStage={};ms.forEach(m=>{(byStage[m.stage]=byStage[m.stage]||[]).push(m);});
+  const ordered=orderBracket(byStage);   // true 2026 bracket order, or null → fall back to date order
   const cols=ORDER.filter(([k])=>byStage[k]&&byStage[k].length).map(([k,label])=>{
-    const list=byStage[k].slice().sort((a,b)=>new Date(a.date||0)-new Date(b.date||0));
+    const list=(ordered&&ordered[k])?ordered[k]:byStage[k].slice().sort((a,b)=>new Date(a.date||0)-new Date(b.date||0));
     return `<div class="koround"><div class="korh">${label}</div>${list.map(m=>`<div class="koslot">${koMatchCard(m)}</div>`).join("")}</div>`;
   }).join("");
   if(!cols)return viewBracket();
