@@ -1,18 +1,21 @@
 name: WC2026 knockout round-up
 on:
   schedule:
-    # 20:00 UTC = 8am NZST, 06:00 UTC = 6pm NZST (NZ is UTC+12 in Jun/Jul) —
-    # refreshes bracket + auto-advances every drawn pool, twice a day.
-    - cron: "0 6,20 * * *"
-  workflow_dispatch: {}        # manual "Run workflow" button (for testing)
+    - cron: "*/30 * * * *"     # every 30 min: pull results, refresh bracket + standings (no Chat post)
+    - cron: "0 6,20 * * *"     # 8am & 6pm NZST: refresh + post the Chat round-up (NZ is UTC+12 in Jun/Jul)
+  workflow_dispatch: {}        # manual run = data refresh only (no Chat)
 jobs:
   roundup:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger knockout-roundup edge function
         run: |
+          # Post the Chat round-up ONLY on the twice-daily schedule; the every-30-min and
+          # manual runs are data-only (post=0) so the Chat space isn't spammed.
+          POST=0
+          if [ "${{ github.event.schedule }}" = "0 6,20 * * *" ]; then POST=1; fi
           curl -fsS -X POST "https://voqwpmmgrvalavvmzrih.supabase.co/functions/v1/knockout-roundup" \
             -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZvcXdwbW1ncnZhbGF2dm16cmloIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0NTI0NjgsImV4cCI6MjA5NjAyODQ2OH0.t0kROq7-8CgwKpJmymKsOtvANHIztwhSC9u8ab4rTVM" \
             -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
             -H "Content-Type: application/json" \
-            -d '{}'
+            -d "{\"post\": $POST}"
