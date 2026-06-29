@@ -855,9 +855,7 @@ function tabsBar(){
   if(!S.config.drawDone)items.push(["join","Join"]);
   items.push(["board","Leaderboard"]);
   if(S.config.drawDone)items.push(["mine","My teams"]);
-  items.push(["fixtures","Fixtures"]);
   if(S.config.drawDone)items.push(["knock","Knockouts"]);
-  items.push(["rules","How it works"]);
   if(isOrganiser()&&S.config.paidMode) items.push(["pay","💷 Payments"]);
   items.push(["org", isOrganiser()?"Organiser ✓":"Organiser"]);
   t.innerHTML=items.map(([k,l])=>`<button data-t="${k}" class="${tab===k?'on':''}" ${tab===k?'aria-current="page"':''}>${l}</button>`).join("");
@@ -1286,7 +1284,7 @@ function viewOrg(){
       const orphans=scd?Object.entries(scd).filter(([id,t])=>!(S.results.advanced.R32||[]).includes(t)).length:0;
       html+=`<div class="warn" style="margin:10px 0"><b>🎲 Second-chance draw</b> — players whose team is out get a surviving team as sub-owners; the champion's sub-owner(s) win a special prize. Original owners keep the main prize.
         ${scd?`<div class="note" style="margin-top:4px">Drawn ${esc(String(S.config.secondChance.drawnAt||"").slice(0,10))} · ${Object.keys(scd).length} player${Object.keys(scd).length===1?'':'s'} assigned.${orphans?` <span style="color:var(--bad)">⚠ ${orphans} assigned to a team no longer in R32 — re-run.</span>`:''}</div>`:''}
-        <div class="row" style="margin-top:8px"><button class="btn sm${scd?' ghost':''}" id="o_scdraw" ${r32n===32?'':'disabled'}>${scd?'Re-run':'Run'} second-chance draw (${scEl.length} eligible)</button></div>
+        <div class="row" style="margin-top:8px"><button class="btn sm${scd?' ghost':''}" id="o_scdraw" ${r32n===32?'':'disabled'}>${scd?'Re-run':'Run'} second-chance draw (${scEl.length} eligible)</button>${scd?`<button class="btn ghost sm" id="o_scclear">Clear draw</button>`:''}</div>
         ${r32n===32?'':`<div class="note" style="margin-top:4px">Needs all 32 Round-of-32 teams ticked first (${r32n}/32).</div>`}</div>`;
     }
     STAGES.forEach((s,si)=>{
@@ -1420,6 +1418,12 @@ function wire(){
         <div class="row"><button class="btn danger" id="sc_go">Yes, re-run</button><button class="btn ghost" onclick="closeModal()">Cancel</button></div>`);
       $("#sc_go").onclick=()=>{closeModal();run();};
     } else run();
+  };
+  if($("#o_scclear"))$("#o_scclear").onclick=()=>{
+    modal(`<h2 style="font-family:Anton;font-weight:400">Clear second-chance draw?</h2>
+      <p class="lead">Removes the current second-chance assignments completely — everyone reverts to just their original team. The feature stays on, so you can run a fresh draw afterwards.</p>
+      <div class="row"><button class="btn danger" id="scc_go">Yes, clear it</button><button class="btn ghost" onclick="closeModal()">Cancel</button></div>`);
+    $("#scc_go").onclick=()=>{closeModal();guard(async()=>{await DB.setConfig({secondChance:null});},"Second-chance draw cleared");};
   };
   if($("#o_roundup"))$("#o_roundup").onclick=()=>guard(async()=>{
     const r=await DB.roundupNow();const p=(r&&r.pools&&r.pools[0])||{};
