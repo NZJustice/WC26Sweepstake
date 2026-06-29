@@ -406,7 +406,7 @@ function blankConfig(){
   return { header:"World Cup 2026 Sweepstake", accentColor:"#22d37a", pot:"",
            prizes:{first:"",second:"",spoon:"",secondChance:""}, scoring:{win:3,draw:1},
            signupsOpen:true, drawDone:false, setupDone:true,
-           secondChanceEnabled:false, knockoutFocus:false };
+           secondChanceEnabled:false, knockoutFocus:false, roundupEnabled:false };
 }
 function teamChip(t,extra=""){const out=isOut(t)?" out":"";return `<span class="team${out} ${extra}">${flag(t)} ${esc(t)} <span class="grp">${groupOf(t)}</span></span>`;}
 function groupOf(t){const x=TEAMS.find(z=>z.id===t);return x?x.group:"";}
@@ -697,6 +697,8 @@ const SupaDB = {
   async upsertGroup(g,i,patch){const {error}=await sb.rpc('upsert_group',{p:poolId,g,i,patch});if(error)throw error;},
   async postResults(){const {data,error}=await sb.functions.invoke('post-results',{body:{pool_id:poolId}});if(error){let m="Couldn't post to Chat";try{const j=await error.context.json();if(j&&j.error)m=j.error;}catch(_){}throw new Error(m);}return data;},
   async runSync(){const {data,error}=await sb.functions.invoke('sync-results',{body:{}});if(error){let m="Sync failed";try{const j=await error.context.json();if(j&&j.error)m=j.error;}catch(_){}throw new Error(m);}return data;},
+  async roundupNow(){const {data,error}=await sb.functions.invoke('knockout-roundup',{body:{pool_id:poolId,post:1}});if(error){let m="Round-up failed";try{const j=await error.context.json();if(j&&j.error)m=j.error;}catch(_){}throw new Error(m);}return data;},
+  async knockoutAdvances(){const {data,error}=await sb.functions.invoke('knockout-roundup',{body:{pool_id:poolId,post:0}});if(error){let m="Couldn't reach the API";try{const j=await error.context.json();if(j&&j.error)m=j.error;}catch(_){}throw new Error(m);}return (data&&data.advanced)||{};},
   async setStage(stage,teams){
     await sb.from('advanced').delete().eq('pool_id',poolId).eq('stage',stage);
     if(teams.length)await sb.from('advanced').insert(teams.map(t=>({pool_id:poolId,stage,team:t})));
@@ -756,6 +758,8 @@ const DemoDB={
     if(!row){row={grp:g,idx:i,score_a:null,score_b:null,match_date:null,pending_a:null,pending_b:null,source:"manual"};p.group.push(row);}
     Object.keys(patch).forEach(k=>{row[k]=patch[k];});demoWrite(o);},
   async setStage(stage,teams){const o=demoAll();const p=demoPool(o,poolId);p.advanced=p.advanced.filter(r=>r.stage!==stage).concat(teams.map(t=>({stage,team:t})));demoWrite(o);},
+  async roundupNow(){return {ok:true,demo:true,pools:[{posted:false,results:0,upcoming:0}]};},
+  async knockoutAdvances(){return {};},
   async setAdvanced(team,add,remove){const o=demoAll();const p=demoPool(o,poolId);
     (add||[]).forEach(s=>{if(!p.advanced.some(r=>r.stage===s&&r.team===team))p.advanced.push({stage:s,team});});
     if(remove&&remove.length)p.advanced=p.advanced.filter(r=>!(r.team===team&&remove.includes(r.stage)));demoWrite(o);},
@@ -1187,6 +1191,12 @@ function viewOrg(){
       <p class="lead">Tick the teams that reached each stage; bonuses apply automatically.</p>
       <button class="btn ghost sm" id="o_autoR32">Auto-qualify Round of 32 from group results</button>
       <p class="note">Fills R32 with the 12 group winners, 12 runners-up and 8 best third-placed teams (needs all group scores in). You can still adjust by hand.</p>`;
+    if(S.config.roundupEnabled){
+      html+=`<div class="row" style="margin:10px 0;gap:8px;flex-wrap:wrap">
+        <button class="btn ghost sm" id="o_koapi">🔄 Pull knockout results from API</button>
+        ${lc(u.email)===lc(S.config.chatPoster||"")?`<button class="btn sm" id="o_roundup">📣 Post knockout round-up to Chat</button>`:''}
+      </div><p class="note">Pull fills in who advanced (you confirm before it counts) and powers the round-up. The daily round-up posts automatically; the button posts on demand.</p>`;
+    }
     if(scEnabled()){
       const r32n=(S.results.advanced.R32||[]).length,scd=scDraw(),scEl=scEligible();
       const orphans=scd?Object.entries(scd).filter(([id,t])=>!(S.results.advanced.R32||[]).includes(t)).length:0;
@@ -1218,6 +1228,7 @@ function viewOrg(){
     <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_shared" ${S.config.sharedTeams?"checked":""}> <span>Shared teams (syndicates) — only matters if more than 48 people join. Each player gets one team; the extra players share a team with someone (and split any prize), so nobody is left out.</span></label>
     <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_sc" ${S.config.secondChanceEnabled?"checked":""}> <span>🎲 Second-chance draw — once group teams are out, knocked-out players are redrawn a surviving team to back, and the champion's backer wins a mini-prize. Adds second-chance info to the <b>Knockouts</b> tab and a <b>Run</b> button under Knockout progression.</span></label>
     <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_kfocus" ${S.config.knockoutFocus?"checked":""}> <span>Knockout focus — now the group stage is done, hide group-stage scores and open the app on the <b>Knockouts</b> tab.</span></label>
+    <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_roundup" ${S.config.roundupEnabled?"checked":""}> <span>📣 Daily knockout round-up to Chat — auto-posts yesterday's results + upcoming fixtures, and adds <b>Pull from API</b> + <b>Post now</b> buttons under Knockout progression. Needs the Chat webhook + <code>knockout-roundup</code> function deployed.</span></label>
     <label class="toggle" style="margin:2px 0 10px"><input type="checkbox" id="c_paid" ${S.config.paidMode?"checked":""}> <span>Paid sweepstake — adds a private <b>💷 Payments</b> tab (only you, the organiser, can see it) to track who's paid.</span></label>
     <label class="fld" style="max-width:220px"><span class="lbl">Entry fee per player ($)</span><input id="c_fee" type="number" min="0" step="0.01" inputmode="decimal" value="${S.config.entryFee!=null?esc(String(S.config.entryFee)):''}" placeholder="e.g. 5"></label>
     <button class="btn" id="c_save">Save event details</button></div>`;
@@ -1326,6 +1337,22 @@ function wire(){
       $("#sc_go").onclick=()=>{closeModal();run();};
     } else run();
   };
+  if($("#o_roundup"))$("#o_roundup").onclick=()=>guard(async()=>{
+    const r=await DB.roundupNow();const p=(r&&r.pools&&r.pools[0])||{};
+    toast(r&&r.demo?"Demo: no Chat in demo":(p.posted?`Posted round-up — ${p.results} result${p.results===1?'':'s'}, ${p.upcoming} upcoming`:"Nothing to post right now"));
+  });
+  if($("#o_koapi"))$("#o_koapi").onclick=async()=>{
+    toast("Checking the API…");
+    let adv;try{adv=await DB.knockoutAdvances();}catch(e){toast(e.message||"Couldn't reach the API");return;}
+    const order=[["R32","Round of 32"],["R16","Round of 16"],["QF","Quarter-final"],["SF","Semi-final"],["F","Final"],["W","Champion"]];
+    const diff=[];order.forEach(([k,l])=>{const api=(adv[k]||[]);const have=new Set(S.results.advanced[k]||[]);const add=api.filter(t=>!have.has(t));if(add.length)diff.push({k,l,add,api});});
+    if(!diff.length){toast("Standings already match the API");return;}
+    const list=diff.map(d=>`<div style="margin:6px 0"><b>${esc(d.l)}</b>: ${d.add.map(esc).join(", ")}</div>`).join("");
+    modal(`<h2 style="font-family:Anton;font-weight:400">Apply results from the API?</h2>
+      <p class="lead">The API shows these teams have advanced. Apply to the standings? Bonuses update instantly; you can still adjust by hand.</p>${list}
+      <div class="row"><button class="btn" id="ko_go">Apply</button><button class="btn ghost" onclick="closeModal()">Cancel</button></div>`);
+    $("#ko_go").onclick=()=>{closeModal();guard(async()=>{for(const d of diff){const merged=Array.from(new Set([...(S.results.advanced[d.k]||[]),...d.api]));await DB.setStage(d.k,merged);}},"Standings updated from the API");};
+  };
 
   document.querySelectorAll("[data-pay-paid]").forEach(cb=>cb.onchange=async()=>{
     const id=cb.dataset.payPaid;
@@ -1343,6 +1370,7 @@ function wire(){
       simpleMode:$("#c_simple").checked,sharedTeams:$("#c_shared").checked,
       secondChanceEnabled:$("#c_sc")?$("#c_sc").checked:!!S.config.secondChanceEnabled,
       knockoutFocus:$("#c_kfocus")?$("#c_kfocus").checked:!!S.config.knockoutFocus,
+      roundupEnabled:$("#c_roundup")?$("#c_roundup").checked:!!S.config.roundupEnabled,
       paidMode:$("#c_paid").checked,entryFee:($("#c_fee").value.trim()===""?0:Number($("#c_fee").value))});
   },"Saved");
   if($("#org_add"))$("#org_add").onclick=()=>{const e=lc($("#org_email").value.trim());if(!e){toast("Enter an email");return;}
