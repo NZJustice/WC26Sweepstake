@@ -460,7 +460,19 @@ function currentStageIndex(){for(let i=STAGES.length-1;i>=0;i--){if((S.results.a
 function completedStageIndex(){for(let i=STAGES.length-1;i>=0;i--){const a=S.results.advanced[STAGES[i].key]||[];if(a.length>=STAGES[i].size)return i+1;}return 0;}
 // Label of the round currently being contested.
 function playingStageLabel(){const ci=completedStageIndex();if(ci>=STAGES.length)return 'Champion decided';if(ci>=1)return STAGES[ci-1].label;const c=currentStageIndex();return c?STAGES[c-1].label:'Group stage';}
-function isOut(t){const cs=completedStageIndex();if(cs>=1)return stageReached(t)<cs;return groupEliminated(t);}
+// A team that LOST a finished knockout match is out immediately — precise per-match
+// elimination from the API fixtures (config.knockoutMatches), so a beaten team drops
+// out the moment its result lands, not only once the whole round is populated.
+function koLost(team){
+  const ms=(S.config&&S.config.knockoutMatches)||[];
+  for(const m of ms){
+    if(m.status!=='FINISHED'&&m.status!=='AWARDED')continue;
+    if(m.winner!=='HOME_TEAM'&&m.winner!=='AWAY_TEAM')continue;
+    if(koCanon(m.winner==='HOME_TEAM'?m.away:m.home)===team)return true;
+  }
+  return false;
+}
+function isOut(t){if(koLost(t))return true;const cs=completedStageIndex();if(cs>=1)return stageReached(t)<cs;return groupEliminated(t);}
 function groupPoints(t){
   let p=0;const g=groupOf(t);const arr=S.results.group[g];if(!arr)return 0;const teams=GROUPS[g];
   arr.forEach((m,i)=>{
