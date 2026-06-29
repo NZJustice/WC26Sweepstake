@@ -1052,6 +1052,11 @@ function viewAlive(){
 // Graphical bracket from API-fetched knockout matches (config.knockoutMatches,
 // written by the knockout-roundup function). Falls back to viewBracket() (the
 // simple stage-chip columns) when no match data has been pulled yet.
+// Defensive: translate football-data name variants the edge function may emit
+// (mirrors its NAME_FIX) so bracket flags/owners/auto-advance use our canonical
+// names even if an older function build wrote a raw API name.
+const KO_NAME_FIX={"Cape Verde Islands":"Cape Verde","Turkey":"Türkiye","Czech Republic":"Czechia","Korea Republic":"South Korea","Republic of Korea":"South Korea","USA":"United States","Cote d'Ivoire":"Ivory Coast","Côte d'Ivoire":"Ivory Coast","Congo DR":"DR Congo","Bosnia and Herzegovina":"Bosnia & Herzegovina","Cabo Verde":"Cape Verde","Curacao":"Curaçao"};
+function koCanon(n){return n?(KO_NAME_FIX[n]||n):n;}
 function koDate(m){
   if(!m.date)return "";
   const d=new Date(m.date),now=new Date();
@@ -1084,8 +1089,8 @@ function koMatchCard(m){
   };
   return `<div class="komatch">
     <div class="komhead"><span>${esc(koDate(m))}</span>${st.label?`<span class="kostatus ${st.cls}">${st.label}</span>`:""}</div>
-    ${row(m.home,m.sh,fin&&m.winner==="HOME_TEAM")}
-    ${row(m.away,m.sa,fin&&m.winner==="AWAY_TEAM")}</div>`;
+    ${row(koCanon(m.home),m.sh,fin&&m.winner==="HOME_TEAM")}
+    ${row(koCanon(m.away),m.sa,fin&&m.winner==="AWAY_TEAM")}</div>`;
 }
 function viewBracketGraphic(){
   const ms=S.config.knockoutMatches||[];
@@ -1421,7 +1426,7 @@ function wire(){
     toast("Checking the API…");
     let adv;try{adv=await DB.knockoutAdvances();}catch(e){toast(e.message||"Couldn't reach the API");return;}
     const order=[["R32","Round of 32"],["R16","Round of 16"],["QF","Quarter-final"],["SF","Semi-final"],["F","Final"],["W","Champion"]];
-    const diff=[];order.forEach(([k,l])=>{const api=(adv[k]||[]);const have=new Set(S.results.advanced[k]||[]);const add=api.filter(t=>!have.has(t));if(add.length)diff.push({k,l,add,api});});
+    const diff=[];order.forEach(([k,l])=>{const api=(adv[k]||[]).map(koCanon);const have=new Set(S.results.advanced[k]||[]);const add=api.filter(t=>!have.has(t));if(add.length)diff.push({k,l,add,api});});
     if(!diff.length){toast("Standings already match the API");return;}
     const list=diff.map(d=>`<div style="margin:6px 0"><b>${esc(d.l)}</b>: ${d.add.map(esc).join(", ")}</div>`).join("");
     modal(`<h2 style="font-family:Anton;font-weight:400">Apply results from the API?</h2>
