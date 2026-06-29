@@ -217,6 +217,26 @@
   .sitefoot{margin-top:30px;padding-top:18px;border-top:1px solid var(--line);text-align:center}
   .sitefoot a{font-size:12.5px;color:var(--ink-dim);text-decoration:none}
   .sitefoot a:hover{color:var(--accent)}
+  /* Graphical knockout bracket */
+  .kobr{display:flex;gap:26px;overflow-x:auto;padding:4px 2px 12px;-webkit-overflow-scrolling:touch}
+  .koround{display:flex;flex-direction:column;justify-content:space-around;gap:14px;min-width:200px;flex:0 0 auto}
+  .korh{font-weight:700;font-size:12px;letter-spacing:.02em;color:var(--accent);text-align:center;padding-bottom:2px}
+  .komatch{position:relative;background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:8px 11px;min-height:78px;display:flex;flex-direction:column;justify-content:center}
+  .komhead{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:11px;color:var(--ink-dim);margin-bottom:5px}
+  .kostatus{font-size:10px;font-weight:800;padding:1px 7px;border-radius:999px;background:var(--line);color:var(--ink-dim);white-space:nowrap}
+  .kostatus.ft{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--accent)}
+  .kostatus.live{background:color-mix(in srgb,var(--bad) 22%,transparent);color:var(--bad)}
+  .koteam{display:flex;align-items:center;gap:7px;padding:3px 0;font-size:14px;line-height:1.2}
+  .koteam .flag,.koteam .noflag{flex:0 0 auto}
+  .koteam .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .koteam .own{color:var(--ink-faint);font-size:11px}
+  .koteam .sc{font-weight:800;min-width:14px;text-align:right;color:var(--ink)}
+  .koteam.win .nm{font-weight:800}
+  .koteam.lose{opacity:.5}
+  .koteam.tbd{color:var(--ink-faint)}
+  .koshield{width:18px;height:18px;flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;font-size:13px;opacity:.7}
+  .koround:not(:last-child) .komatch::after{content:"";position:absolute;right:-26px;top:50%;width:26px;height:1px;background:var(--line)}
+  @media(max-width:560px){.koround{min-width:176px}.koteam{font-size:13px}}
 </style>
 </head>
 <body>
@@ -1023,6 +1043,56 @@ function viewAlive(){
     <div>${alive.map(chip).join("")||'<span class="empty">None</span>'}</div></div>
     <div class="card"><h2>Knocked out (${out.length})</h2><div>${out.map(t=>teamChip(t)).join("")||'<span class="empty">None yet</span>'}</div></div>`;
 }
+// Graphical bracket from API-fetched knockout matches (config.knockoutMatches,
+// written by the knockout-roundup function). Falls back to viewBracket() (the
+// simple stage-chip columns) when no match data has been pulled yet.
+function koDate(m){
+  if(!m.date)return "";
+  const d=new Date(m.date),now=new Date();
+  const day=x=>x.toLocaleDateString(undefined,{year:"numeric",month:"2-digit",day:"2-digit"});
+  const tmr=new Date(now.getTime()+864e5);
+  let dl;
+  if(day(d)===day(now))dl="Today";
+  else if(day(d)===day(tmr))dl="Tomorrow";
+  else dl=d.toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short"});
+  const fin=m.status==="FINISHED"||m.status==="AWARDED";
+  return fin?dl:`${dl}, ${d.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"})}`;
+}
+function koStatus(m){
+  if(m.status==="FINISHED"||m.status==="AWARDED")return {cls:"ft",label:"FT"};
+  if(["IN_PLAY","PAUSED","EXTRA_TIME","PENALTY_SHOOTOUT"].includes(m.status))return {cls:"live",label:"LIVE"};
+  return {cls:"",label:""};
+}
+function koOwnerSuffix(team){
+  if(!team||!S.config.drawDone)return "";
+  const o=ownersOf(team).map(shortName);const s=scOwnersOf(team).map(shortName);
+  const all=o.concat(s.length?["🎲 "+s.join("/")]:[]);
+  return all.length?` <span class="own">· ${esc(all.join(", "))}</span>`:"";
+}
+function koMatchCard(m){
+  const fin=m.status==="FINISHED"||m.status==="AWARDED";
+  const st=koStatus(m);
+  const row=(team,score,win)=>{
+    if(!team)return `<div class="koteam tbd"><span class="koshield">&#128737;</span><span class="nm">TBD</span></div>`;
+    return `<div class="koteam ${win?"win":(fin?"lose":"")}">${flag(team)} <span class="nm">${esc(team)}${koOwnerSuffix(team)}</span>${(score!=null&&score!=="")?`<span class="sc">${esc(String(score))}</span>`:""}</div>`;
+  };
+  return `<div class="komatch">
+    <div class="komhead"><span>${esc(koDate(m))}</span>${st.label?`<span class="kostatus ${st.cls}">${st.label}</span>`:""}</div>
+    ${row(m.home,m.sh,fin&&m.winner==="HOME_TEAM")}
+    ${row(m.away,m.sa,fin&&m.winner==="AWAY_TEAM")}</div>`;
+}
+function viewBracketGraphic(){
+  const ms=S.config.knockoutMatches||[];
+  if(!ms.length)return viewBracket();
+  const ORDER=[["LAST_32","Round of 32"],["LAST_16","Round of 16"],["QUARTER_FINALS","Quarter-final"],["SEMI_FINALS","Semi-final"],["FINAL","Final"]];
+  const byStage={};ms.forEach(m=>{(byStage[m.stage]=byStage[m.stage]||[]).push(m);});
+  const cols=ORDER.filter(([k])=>byStage[k]&&byStage[k].length).map(([k,label])=>{
+    const list=byStage[k].slice().sort((a,b)=>new Date(a.date||0)-new Date(b.date||0));
+    return `<div class="koround"><div class="korh">${label}</div>${list.map(koMatchCard).join("")}</div>`;
+  }).join("");
+  if(!cols)return viewBracket();
+  return `<div class="kobr">${cols}</div>`;
+}
 function viewBracket(){
   const cols=STAGES.map(s=>{const teams=(S.results.advanced[s.key]||[]);
     return `<div class="card" style="margin:0"><h2 style="font-size:15px">${s.label}</h2>
@@ -1047,7 +1117,7 @@ function viewKnock(){
   const myScT=meId?scTeamOf(meId):null;
   const banner=myScT?`<div class="good" style="margin-bottom:14px">🎲 <b>Second chance!</b> Your group-stage team is out, so you've been drawn ${flag(myScT)} <b>${esc(myScT)}</b> to back through the knockouts.${isOut(myScT)?` They've since gone out — that's the rub of the draw, but thanks for playing on.`:` If ${esc(myScT)} win the World Cup, you win ${scPrizeText()?`<b>${esc(scPrizeText())}</b>`:'the mini-prize'}.`}</div>`:'';
   const headCard=`<div class="card"><h2>Knockouts</h2><p class="lead">${head}</p>${toggle}</div>`;
-  if(koView==='bracket') return headCard+banner+viewBracket();
+  if(koView==='bracket') return headCard+banner+viewBracketGraphic();
   const scCol=!!scd;
   const aliveSorted=alive.slice().sort((a,b)=>stageReached(b)-stageReached(a)||groupOf(a).localeCompare(groupOf(b))||a.localeCompare(b));
   const teamRows=aliveSorted.map(t=>{
