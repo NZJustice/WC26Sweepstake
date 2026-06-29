@@ -468,8 +468,9 @@ function koLost(team){
   const ms=(S.config&&S.config.knockoutMatches)||[];
   for(const m of ms){
     if(m.status!=='FINISHED'&&m.status!=='AWARDED')continue;
-    if(m.winner!=='HOME_TEAM'&&m.winner!=='AWAY_TEAM')continue;
-    if(koCanon(m.winner==='HOME_TEAM'?m.away:m.home)===team)return true;
+    const w=koWinner(m);if(!w)continue;
+    const h=koCanon(m.home),a=koCanon(m.away);
+    if((w===h&&a===team)||(w===a&&h===team))return true;
   }
   return false;
 }
@@ -1069,6 +1070,18 @@ function viewAlive(){
 // names even if an older function build wrote a raw API name.
 const KO_NAME_FIX={"Cape Verde Islands":"Cape Verde","Turkey":"Türkiye","Czech Republic":"Czechia","Korea Republic":"South Korea","Republic of Korea":"South Korea","USA":"United States","Cote d'Ivoire":"Ivory Coast","Côte d'Ivoire":"Ivory Coast","Congo DR":"DR Congo","Bosnia and Herzegovina":"Bosnia & Herzegovina","Cabo Verde":"Cape Verde","Curacao":"Curaçao"};
 function koCanon(n){return n?(KO_NAME_FIX[n]||n):n;}
+const KO_NEXT={LAST_32:'R16',LAST_16:'QF',QUARTER_FINALS:'SF',SEMI_FINALS:'F',FINAL:'W'};
+// Winner of a knockout match: feed winner → penalty winner → (if the feed left it
+// unresolved, e.g. a shootout with no winner) whoever's been advanced to the next round.
+// So an organiser can fix a missed result by ticking the winner through and the bracket follows.
+function koWinner(m){
+  if(!m)return null;const h=koCanon(m.home),a=koCanon(m.away);
+  if(m.winner==='HOME_TEAM')return h;
+  if(m.winner==='AWAY_TEAM')return a;
+  if(m.pens&&m.pens.h!=null&&m.pens.a!=null&&m.pens.h!==m.pens.a)return m.pens.h>m.pens.a?h:a;
+  if((m.status==='FINISHED'||m.status==='AWARDED')&&h&&a){const nx=KO_NEXT[m.stage];if(nx){const adv=new Set(S.results.advanced[nx]||[]);if(adv.has(h)&&!adv.has(a))return h;if(adv.has(a)&&!adv.has(h))return a;}}
+  return null;
+}
 function koDate(m){
   if(!m.date)return "";
   const d=new Date(m.date),now=new Date();
@@ -1096,14 +1109,17 @@ function koOwnerSuffix(team){
 function koMatchCard(m){
   const fin=m.status==="FINISHED"||m.status==="AWARDED";
   const st=koStatus(m);
+  const h=koCanon(m.home),a=koCanon(m.away),w=fin?koWinner(m):null;
+  const pen=fin&&(m.pens||(m.sh!=null&&m.sh!==""&&m.sh===m.sa));
+  const penTxt=(m.pens&&m.pens.h!=null)?` · ${m.pens.h}–${m.pens.a} pens`:(pen?" · pens":"");
   const row=(team,score,win)=>{
     if(!team)return `<div class="koteam tbd"><span class="koshield">&#128737;</span><span class="nm">TBD</span></div>`;
     return `<div class="koteam ${win?"win":(fin?"lose":"")}">${flag(team)} <span class="nm">${esc(team)}${koOwnerSuffix(team)}</span>${(score!=null&&score!=="")?`<span class="sc">${esc(String(score))}</span>`:""}</div>`;
   };
   return `<div class="komatch">
-    <div class="komhead"><span>${esc(koDate(m))}</span>${st.label?`<span class="kostatus ${st.cls}">${st.label}</span>`:""}</div>
-    ${row(koCanon(m.home),m.sh,fin&&m.winner==="HOME_TEAM")}
-    ${row(koCanon(m.away),m.sa,fin&&m.winner==="AWAY_TEAM")}</div>`;
+    <div class="komhead"><span>${esc(koDate(m))}${penTxt}</span>${st.label?`<span class="kostatus ${st.cls}">${st.label}</span>`:""}</div>
+    ${row(h,m.sh,!!w&&w===h)}
+    ${row(a,m.sa,!!w&&w===a)}</div>`;
 }
 /* Official 2026 knockout bracket. Display order of each round (top→bottom),
    and the slot linkage, from the FIFA bracket (R16 89←R32 74+77, 90←73+75, …). */
@@ -1131,7 +1147,7 @@ function orderBracket(byStage){
       const m=r32.find(x=>need.every(t=>has(x,t))); if(m)slot[s]=m;
     }
     if(KO_R32_ORDER.some(s=>!slot[s]))return null;        // couldn't place every R32 match → fall back
-    const winnerOf=s=>{const m=slot[s];if(!m)return null;return m.winner==='HOME_TEAM'?koCanon(m.home):m.winner==='AWAY_TEAM'?koCanon(m.away):null;};
+    const winnerOf=s=>{const m=slot[s];return m?koWinner(m):null;};
     const place=(key,order)=>{
       const list=(byStage[key]||[]).slice(),used=new Set();
       for(const s of order){const exp=KO_FEEDERS[s].map(winnerOf).filter(Boolean);
