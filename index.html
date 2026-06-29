@@ -426,7 +426,7 @@ function blankConfig(){
   return { header:"World Cup 2026 Sweepstake", accentColor:"#22d37a", pot:"",
            prizes:{first:"",second:"",spoon:"",secondChance:""}, scoring:{win:3,draw:1},
            signupsOpen:true, drawDone:false, setupDone:true,
-           secondChanceEnabled:false, knockoutFocus:false, roundupEnabled:false, autoKnockouts:false };
+           secondChanceEnabled:false, knockoutFocus:false, roundupEnabled:false };
 }
 function teamChip(t,extra=""){const out=isOut(t)?" out":"";return `<span class="team${out} ${extra}">${flag(t)} ${esc(t)} <span class="grp">${groupOf(t)}</span></span>`;}
 function groupOf(t){const x=TEAMS.find(z=>z.id===t);return x?x.group:"";}
@@ -1127,7 +1127,7 @@ function viewKnock(){
     <button class="btn sm${koView==='bracket'?'':' ghost'}" data-kv="bracket">Bracket</button></div>`;
   const myScT=meId?scTeamOf(meId):null;
   const banner=myScT?`<div class="good" style="margin-bottom:14px">🎲 <b>Second chance!</b> Your group-stage team is out, so you've been drawn ${flag(myScT)} <b>${esc(myScT)}</b> to back through the knockouts.${isOut(myScT)?` They've since gone out — that's the rub of the draw, but thanks for playing on.`:` If ${esc(myScT)} win the World Cup, you win ${scPrizeText()?`<b>${esc(scPrizeText())}</b>`:'the mini-prize'}.`}</div>`:'';
-  const headCard=`<div class="card"><h2>Knockouts</h2><p class="lead">${head}</p>${toggle}</div>`;
+  const headCard=`<div class="card"><h2>Knockouts</h2><p class="lead">${head}</p>${toggle}<p class="note" style="margin:8px 0 0">Results update automatically around 8am &amp; 6pm NZT.</p></div>`;
   if(koView==='bracket') return headCard+banner+viewBracketGraphic();
   const scCol=!!scd;
   const aliveSorted=alive.slice().sort((a,b)=>stageReached(b)-stageReached(a)||groupOf(a).localeCompare(groupOf(b))||a.localeCompare(b));
@@ -1272,12 +1272,10 @@ function viewOrg(){
       <p class="lead">Tick the teams that reached each stage; bonuses apply automatically.</p>
       <button class="btn ghost sm" id="o_autoR32">Auto-qualify Round of 32 from group results</button>
       <p class="note">Fills R32 with the 12 group winners, 12 runners-up and 8 best third-placed teams (needs all group scores in). You can still adjust by hand.</p>`;
-    if(S.config.roundupEnabled){
-      html+=`<div class="row" style="margin:10px 0;gap:8px;flex-wrap:wrap">
-        <button class="btn ghost sm" id="o_koapi">🔄 Pull knockout results from API</button>
+    html+=`<div class="row" style="margin:10px 0;gap:8px;flex-wrap:wrap">
+        <button class="btn ghost sm" id="o_koapi">🔄 Pull knockout results from API now</button>
         ${lc(u.email)===lc(S.config.chatPoster||"")?`<button class="btn sm" id="o_roundup">📣 Post knockout round-up to Chat</button>`:''}
-      </div><p class="note">Pull fills in who advanced (you confirm before it counts) and powers the round-up. The daily round-up posts automatically; the button posts on demand.</p>`;
-    }
+      </div><p class="note">Knockout results auto-update from the API around 8am &amp; 6pm NZT — Pull to refresh on demand${lc(u.email)===lc(S.config.chatPoster||"")?'; the round-up also posts to Chat automatically':''}.</p>`;
     if(scEnabled()){
       const r32n=(S.results.advanced.R32||[]).length,scd=scDraw(),scEl=scEligible();
       const orphans=scd?Object.entries(scd).filter(([id,t])=>!(S.results.advanced.R32||[]).includes(t)).length:0;
@@ -1309,8 +1307,7 @@ function viewOrg(){
     <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_shared" ${S.config.sharedTeams?"checked":""}> <span>Shared teams (syndicates) — only matters if more than 48 people join. Each player gets one team; the extra players share a team with someone (and split any prize), so nobody is left out.</span></label>
     <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_sc" ${S.config.secondChanceEnabled?"checked":""}> <span>🎲 Second-chance draw — once group teams are out, knocked-out players are redrawn a surviving team to back, and the champion's backer wins a mini-prize. Adds second-chance info to the <b>Knockouts</b> tab and a <b>Run</b> button under Knockout progression.</span></label>
     <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_kfocus" ${S.config.knockoutFocus?"checked":""}> <span>Knockout focus — now the group stage is done, hide group-stage scores and open the app on the <b>Knockouts</b> tab.</span></label>
-    <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_roundup" ${S.config.roundupEnabled?"checked":""}> <span>📣 Daily knockout round-up to Chat — auto-posts yesterday's results + upcoming fixtures, and adds <b>Pull from API</b> + <b>Post now</b> buttons under Knockout progression. Needs the Chat webhook + <code>knockout-roundup</code> function deployed.</span></label>
-    <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_autoko" ${S.config.autoKnockouts?"checked":""}> <span>🤖 Auto-advance knockouts from the API — each day the bracket and standings fill in automatically (who advanced, scores), no manual Pull/Confirm. Best for a pool you won't manage hands-on. Needs the <code>knockout-roundup</code> function deployed.</span></label>
+    <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_roundup" ${S.config.roundupEnabled?"checked":""}> <span>📣 Daily knockout round-up to Chat — auto-posts yesterday's results + upcoming fixtures. Needs the Chat webhook + <code>knockout-roundup</code> function deployed. (Knockout results themselves auto-update for every pool — this is just the Chat message.)</span></label>
     <label class="toggle" style="margin:2px 0 10px"><input type="checkbox" id="c_paid" ${S.config.paidMode?"checked":""}> <span>Paid sweepstake — adds a private <b>💷 Payments</b> tab (only you, the organiser, can see it) to track who's paid.</span></label>
     <label class="fld" style="max-width:220px"><span class="lbl">Entry fee per player ($)</span><input id="c_fee" type="number" min="0" step="0.01" inputmode="decimal" value="${S.config.entryFee!=null?esc(String(S.config.entryFee)):''}" placeholder="e.g. 5"></label>
     <button class="btn" id="c_save">Save event details</button></div>`;
@@ -1453,7 +1450,6 @@ function wire(){
       secondChanceEnabled:$("#c_sc")?$("#c_sc").checked:!!S.config.secondChanceEnabled,
       knockoutFocus:$("#c_kfocus")?$("#c_kfocus").checked:!!S.config.knockoutFocus,
       roundupEnabled:$("#c_roundup")?$("#c_roundup").checked:!!S.config.roundupEnabled,
-      autoKnockouts:$("#c_autoko")?$("#c_autoko").checked:!!S.config.autoKnockouts,
       paidMode:$("#c_paid").checked,entryFee:($("#c_fee").value.trim()===""?0:Number($("#c_fee").value))});
   },"Saved");
   if($("#org_add"))$("#org_add").onclick=()=>{const e=lc($("#org_email").value.trim());if(!e){toast("Enter an email");return;}

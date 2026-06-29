@@ -1,7 +1,9 @@
 name: WC2026 knockout round-up
 on:
   schedule:
-    - cron: "0 20 * * *"     # 20:00 UTC = 8am NZST — daily knockout digest
+    # 20:00 UTC = 8am NZST, 06:00 UTC = 6pm NZST (NZ is UTC+12 in Jun/Jul) —
+    # refreshes bracket + auto-advances every drawn pool, twice a day.
+    - cron: "0 6,20 * * *"
   workflow_dispatch: {}        # manual "Run workflow" button (for testing)
 jobs:
   roundup:
