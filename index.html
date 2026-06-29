@@ -407,7 +407,7 @@ let meId = null;       // my participant id in this pool (from auth)
 let poolId = null;     // current pool slug
 let unsub = null;      // realtime unsubscribe
 let resultsView = 'date';  // organiser results view: 'date' | 'group'
-let koView = 'table';      // knockouts tab: 'table' | 'bracket'
+let koView = 'bracket';    // knockouts tab default sub-view: 'bracket' | 'table'
 let PAY = null;        // organiser-only payments cache (lazy-loaded, kept out of the public S)
 let tab = "join";
 
@@ -426,7 +426,7 @@ function blankConfig(){
   return { header:"World Cup 2026 Sweepstake", accentColor:"#22d37a", pot:"",
            prizes:{first:"",second:"",spoon:"",secondChance:""}, scoring:{win:3,draw:1},
            signupsOpen:true, drawDone:false, setupDone:true,
-           secondChanceEnabled:false, knockoutFocus:false, roundupEnabled:false };
+           secondChanceEnabled:false, knockoutFocus:false, roundupEnabled:false, autoKnockouts:false };
 }
 function teamChip(t,extra=""){const out=isOut(t)?" out":"";return `<span class="team${out} ${extra}">${flag(t)} ${esc(t)} <span class="grp">${groupOf(t)}</span></span>`;}
 function groupOf(t){const x=TEAMS.find(z=>z.id===t);return x?x.group:"";}
@@ -1310,6 +1310,7 @@ function viewOrg(){
     <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_sc" ${S.config.secondChanceEnabled?"checked":""}> <span>🎲 Second-chance draw — once group teams are out, knocked-out players are redrawn a surviving team to back, and the champion's backer wins a mini-prize. Adds second-chance info to the <b>Knockouts</b> tab and a <b>Run</b> button under Knockout progression.</span></label>
     <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_kfocus" ${S.config.knockoutFocus?"checked":""}> <span>Knockout focus — now the group stage is done, hide group-stage scores and open the app on the <b>Knockouts</b> tab.</span></label>
     <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_roundup" ${S.config.roundupEnabled?"checked":""}> <span>📣 Daily knockout round-up to Chat — auto-posts yesterday's results + upcoming fixtures, and adds <b>Pull from API</b> + <b>Post now</b> buttons under Knockout progression. Needs the Chat webhook + <code>knockout-roundup</code> function deployed.</span></label>
+    <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_autoko" ${S.config.autoKnockouts?"checked":""}> <span>🤖 Auto-advance knockouts from the API — each day the bracket and standings fill in automatically (who advanced, scores), no manual Pull/Confirm. Best for a pool you won't manage hands-on. Needs the <code>knockout-roundup</code> function deployed.</span></label>
     <label class="toggle" style="margin:2px 0 10px"><input type="checkbox" id="c_paid" ${S.config.paidMode?"checked":""}> <span>Paid sweepstake — adds a private <b>💷 Payments</b> tab (only you, the organiser, can see it) to track who's paid.</span></label>
     <label class="fld" style="max-width:220px"><span class="lbl">Entry fee per player ($)</span><input id="c_fee" type="number" min="0" step="0.01" inputmode="decimal" value="${S.config.entryFee!=null?esc(String(S.config.entryFee)):''}" placeholder="e.g. 5"></label>
     <button class="btn" id="c_save">Save event details</button></div>`;
@@ -1452,6 +1453,7 @@ function wire(){
       secondChanceEnabled:$("#c_sc")?$("#c_sc").checked:!!S.config.secondChanceEnabled,
       knockoutFocus:$("#c_kfocus")?$("#c_kfocus").checked:!!S.config.knockoutFocus,
       roundupEnabled:$("#c_roundup")?$("#c_roundup").checked:!!S.config.roundupEnabled,
+      autoKnockouts:$("#c_autoko")?$("#c_autoko").checked:!!S.config.autoKnockouts,
       paidMode:$("#c_paid").checked,entryFee:($("#c_fee").value.trim()===""?0:Number($("#c_fee").value))});
   },"Saved");
   if($("#org_add"))$("#org_add").onclick=()=>{const e=lc($("#org_email").value.trim());if(!e){toast("Enter an email");return;}
