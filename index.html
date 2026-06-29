@@ -387,6 +387,7 @@ let meId = null;       // my participant id in this pool (from auth)
 let poolId = null;     // current pool slug
 let unsub = null;      // realtime unsubscribe
 let resultsView = 'date';  // organiser results view: 'date' | 'group'
+let koView = 'table';      // knockouts tab: 'table' | 'bracket'
 let PAY = null;        // organiser-only payments cache (lazy-loaded, kept out of the public S)
 let tab = "join";
 
@@ -403,8 +404,9 @@ $("#scrim").addEventListener("click",e=>{if(e.target.id==="scrim")closeModal();}
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeModal();});
 function blankConfig(){
   return { header:"World Cup 2026 Sweepstake", accentColor:"#22d37a", pot:"",
-           prizes:{first:"",second:"",spoon:""}, scoring:{win:3,draw:1},
-           signupsOpen:true, drawDone:false, setupDone:true };
+           prizes:{first:"",second:"",spoon:"",secondChance:""}, scoring:{win:3,draw:1},
+           signupsOpen:true, drawDone:false, setupDone:true,
+           secondChanceEnabled:false, knockoutFocus:false };
 }
 function teamChip(t,extra=""){const out=isOut(t)?" out":"";return `<span class="team${out} ${extra}">${flag(t)} ${esc(t)} <span class="grp">${groupOf(t)}</span></span>`;}
 function groupOf(t){const x=TEAMS.find(z=>z.id===t);return x?x.group:"";}
@@ -467,6 +469,7 @@ function scEnabled(){return !!(S&&S.config.secondChanceEnabled);}
 function scDraw(){return (scEnabled()&&S.config.secondChance&&S.config.secondChance.assignments)||null;}
 function scTeamOf(pid){const d=scDraw();return (d&&d[pid])||null;}
 function scOwnersOf(team){const d=scDraw();if(!d)return [];return Object.entries(d).filter(([id,t])=>t===team).map(([id])=>(S.participants.find(p=>p.id===id)||{}).name).filter(Boolean);}
+function scPrizeText(){return (S.config.prizes&&S.config.prizes.secondChance)||'';}
 // Players none of whose teams made the Round of 32.
 function scEligible(){const r32=new Set(S.results.advanced.R32||[]);return S.participants.filter(p=>{const tt=S.assignments[p.id]||[];return tt.length&&!tt.some(t=>r32.has(t));});}
 // Random spread: shuffled players dealt one-by-one to the surviving team with the
@@ -815,8 +818,7 @@ function tabsBar(){
   items.push(["board","Leaderboard"]);
   if(S.config.drawDone)items.push(["mine","My teams"]);
   items.push(["fixtures","Fixtures"]);
-  if(S.config.drawDone)items.push(["alive","Teams in"]);
-  if(S.config.drawDone)items.push(["bracket","Progression"]);
+  if(S.config.drawDone)items.push(["knock","Knockouts"]);
   items.push(["rules","How it works"]);
   if(isOrganiser()&&S.config.paidMode) items.push(["pay","💷 Payments"]);
   items.push(["org", isOrganiser()?"Organiser ✓":"Organiser"]);
@@ -828,13 +830,12 @@ function render(){
   if(!S){return;}            // landing / missing-pool screens set their own view
   tabsBar();
   const v=$("#view");
-  if(tab==="join"&&S.config.drawDone)tab="board";
+  if(tab==="join"&&S.config.drawDone)tab=(currentStageIndex()>=1||S.config.knockoutFocus)?"knock":"board";
   if(tab==="join")v.innerHTML=viewJoin();
   else if(tab==="board")v.innerHTML=viewBoard();
   else if(tab==="mine")v.innerHTML=viewMine();
   else if(tab==="fixtures")v.innerHTML=viewFixtures();
-  else if(tab==="alive")v.innerHTML=viewAlive();
-  else if(tab==="bracket")v.innerHTML=viewBracket();
+  else if(tab==="knock"||tab==="alive"||tab==="bracket")v.innerHTML=viewKnock();
   else if(tab==="rules")v.innerHTML=viewRules();
   else if(tab==="pay")v.innerHTML=viewPayments();
   else if(tab==="org")v.innerHTML=viewOrg();
@@ -940,10 +941,12 @@ function viewBoard(){
   }else{cards=ranked.map(card).join("");}
   const ownerNames=champ?ownersOf(champ).join(" & "):"";
   const scWinners=champ?scOwnersOf(champ):[];
-  const scWin=scWinners.length?` 🎲 Special prize: <b>${esc(scWinners.join(" & "))}</b> — second-chance owner${scWinners.length===1?'':'s'} of ${esc(champ)}.`:'';
+  const scP=scPrizeText();
+  const scWin=scWinners.length?` 🎲 Mini-prize: <b>${esc(scWinners.join(" & "))}</b> — second-chance backer${scWinners.length===1?'':'s'} of ${esc(champ)}${scP?` (wins ${esc(scP)})`:''}.`:'';
+  const mainP=(champ&&S.config.prizes&&S.config.prizes.first)?` Prize: ${esc(S.config.prizes.first)}.`:'';
   const lead=simple
-    ?(champ?`🏆 Winner: <b>${esc(ownerNames||'?')}</b> — owns ${flag(champ)} ${esc(champ)}.${scWin}`:(S.config.drawDone?"Whoever owns the World Cup winner takes it. Wins &amp; losses so far:":"Draw not run yet."))
-    :(S.config.drawDone?(champ?`Champions: ${flag(champ)} ${esc(champ)}. Final standings.${scWin}`:"Live standings. Updates as results go in."):"Draw not run yet.");
+    ?(champ?`🏆 Winner: <b>${esc(ownerNames||'?')}</b> — owns ${flag(champ)} ${esc(champ)}.${mainP}${scWin}`:(S.config.drawDone?"Whoever owns the World Cup winner takes it. Wins &amp; losses so far:":"Draw not run yet."))
+    :(S.config.drawDone?(champ?`Champions: ${flag(champ)} ${esc(champ)}.${mainP} Final standings.${scWin}`:"Live standings. Updates as results go in."):"Draw not run yet.");
   return `<div class="card"><h2>Leaderboard</h2>
     <p class="lead">${lead}</p>
     ${cards}
@@ -993,9 +996,13 @@ function viewFixtures(){
       <span style="width:72px;text-align:center">${res}</span>
       <span style="flex:1">${flag(f.t1)} ${esc(f.t1)}${tag(f.t1)}</span></div>`;};
   let html="",curKey="";
-  all.forEach(f=>{if(f.dayKey!==curKey){curKey=f.dayKey;html+=`<div style="margin:14px 0 4px;font-weight:700;font-size:13px;color:var(--accent)">${f.dayLabel}</div>`;}html+=line(f);});
+  if(S.config.knockoutFocus){
+    html=`<div class="good" style="margin:6px 0">Group stage complete — head to the <b>Knockouts</b> tab for the run-in.</div>`;
+  } else {
+    all.forEach(f=>{if(f.dayKey!==curKey){curKey=f.dayKey;html+=`<div style="margin:14px 0 4px;font-weight:700;font-size:13px;color:var(--accent)">${f.dayLabel}</div>`;}html+=line(f);});
+  }
   return `<div class="card"><h2>Fixtures</h2>
-    <p class="lead">Group stage. Kickoff times shown in your timezone${TZNAME?` (${esc(TZNAME)})`:""}.</p>${html}
+    <p class="lead">${S.config.knockoutFocus?'The group stage is done.':'Group stage.'} Kickoff times shown in your timezone${TZNAME?` (${esc(TZNAME)})`:""}.</p>${html}
     <p class="note">Knockouts: Round of 32 (28 Jun–3 Jul), Round of 16 (4–7 Jul), Quarter-finals (9–11 Jul), Semi-finals (14–15 Jul), Third place (18 Jul), Final (19 Jul).</p></div>
     <div class="card" style="text-align:center"><h2 style="font-size:15px">📅 Add these to your calendar</h2>
     <p class="lead" style="margin-bottom:12px">Every World Cup 2026 fixture as a one-tap calendar download — works with Google, Apple and Outlook.</p>
@@ -1019,6 +1026,51 @@ function viewBracket(){
       <div>${teams.map(t=>teamChip(t)).join("")||'<span class="empty" style="padding:8px">TBD</span>'}</div></div>`;}).join("");
   return `<div class="grid2">${cols}</div>`;
 }
+// Knockouts tab — the run-in tracker. Table view (owners + second-chance backers)
+// or the bracket columns. Degrades cleanly: with no second-chance draw, the sub-owner
+// column/table simply don't appear, so non-redraw pools see owners + bracket only.
+function viewKnock(){
+  const cs=currentStageIndex(), started=cs>=1;
+  const alive=TEAMS.map(t=>t.id).filter(t=>!isOut(t));
+  const out=TEAMS.map(t=>t.id).filter(t=>isOut(t));
+  const scd=scDraw();
+  const head=started
+    ? `Knockout stage — <b>${STAGES[cs-1].label}</b>. ${alive.length} team${alive.length===1?'':'s'} still in.`
+    : `The knockout bracket fills once the organiser sets the Round of 32.`;
+  const toggle=`<div class="row" style="margin:10px 0 0;gap:6px;align-items:center"><span class="note">View:</span>
+    <button class="btn sm${koView==='table'?'':' ghost'}" data-kv="table">Table</button>
+    <button class="btn sm${koView==='bracket'?'':' ghost'}" data-kv="bracket">Bracket</button></div>`;
+  const myScT=meId?scTeamOf(meId):null;
+  const banner=myScT?`<div class="good" style="margin-bottom:14px">🎲 <b>Second chance!</b> Your group-stage team is out, so you've been drawn ${flag(myScT)} <b>${esc(myScT)}</b> to back through the knockouts.${isOut(myScT)?` They've since gone out — that's the rub of the draw, but thanks for playing on.`:` If ${esc(myScT)} win the World Cup, you win ${scPrizeText()?`<b>${esc(scPrizeText())}</b>`:'the mini-prize'}.`}</div>`:'';
+  const headCard=`<div class="card"><h2>Knockouts</h2><p class="lead">${head}</p>${toggle}</div>`;
+  if(koView==='bracket') return headCard+banner+viewBracket();
+  const scCol=!!scd;
+  const aliveSorted=alive.slice().sort((a,b)=>stageReached(b)-stageReached(a)||groupOf(a).localeCompare(groupOf(b))||a.localeCompare(b));
+  const teamRows=aliveSorted.map(t=>{
+    const subs=scOwnersOf(t).map(shortName);
+    return `<tr>
+      <td>${flag(t)} ${esc(t)} <span class="grp">${groupOf(t)}</span></td>
+      <td>${esc(ownersOf(t).join(", ")||'—')}</td>
+      ${scCol?`<td>${subs.length?'🎲 '+esc(subs.join(", ")):'<span class="note">—</span>'}</td>`:''}
+    </tr>`;
+  }).join("");
+  const teamsTable=`<div class="card"><h2>Teams still in (${alive.length})</h2>
+    <p class="lead">Primary owners of every team left in the knockouts.${scCol?' Second-chance backers shown alongside.':''}</p>
+    <div class="tablewrap"><table><thead><tr><th>Team</th><th>Owner</th>${scCol?'<th>Second chance</th>':''}</tr></thead>
+    <tbody>${teamRows||`<tr><td colspan="${scCol?3:2}" class="empty">No teams in yet.</td></tr>`}</tbody></table></div></div>`;
+  let scTable='';
+  if(scd){
+    const picks=Object.entries(scd).map(([id,t])=>({name:(S.participants.find(p=>p.id===id)||{}).name,team:t})).filter(x=>x.name).sort((a,b)=>a.name.localeCompare(b.name));
+    const rows=picks.map(x=>`<tr style="${isOut(x.team)?'opacity:.55':''}"><td>${esc(x.name)}</td><td>${flag(x.team)} ${esc(x.team)}</td><td style="text-align:center">${isOut(x.team)?'<span class="note">out</span>':'<span style="color:#22c55e;font-weight:600">in</span>'}</td></tr>`).join("");
+    scTable=`<div class="card"><h2>🎲 Second-chance picks (${picks.length})</h2>
+      <p class="lead">Players whose team went out in the groups, each drawn a surviving team to back. ${scPrizeText()?`Whoever's backing the champion wins <b>${esc(scPrizeText())}</b>.`:`Whoever's backing the champion wins the mini-prize.`}</p>
+      <div class="tablewrap"><table><thead><tr><th>Player</th><th>Backing</th><th style="text-align:center">Status</th></tr></thead>
+      <tbody>${rows||`<tr><td colspan="3" class="empty">No second-chance picks yet.</td></tr>`}</tbody></table></div></div>`;
+  }
+  const outCard=`<div class="card"><details><summary style="cursor:pointer;font-weight:700">Knocked out (${out.length})</summary>
+    <div style="margin-top:10px">${out.map(t=>teamChip(t)).join("")||'<span class="empty">None yet</span>'}</div></details></div>`;
+  return headCard+banner+teamsTable+scTable+outCard;
+}
 function viewRules(){
   const sc=S.config.scoring;const simple=!!S.config.simpleMode;
   return `<div class="card"><h2>How it works</h2>
@@ -1034,9 +1086,12 @@ function viewRules(){
       ${STAGES.map(s=>`<tr><td>Reach ${s.label}</td><td class="num">+${s.pts} pts</td></tr>`).join("")}
     </tbody></table></div>
     <p class="note">Progression bonuses stack, so a team that goes all the way earns every milestone along the way. Your score is the total across all your teams.</p>`}
-    ${S.config.pot?`<h2 style="font-size:15px">Prizes</h2><p class="lead">Pot: ${esc(S.config.pot)}</p>
-      ${S.config.prizes.first?`<p class="note">1st: ${esc(S.config.prizes.first)}</p>`:""}
+    ${scEnabled()?`<h2 style="font-size:15px">Second chance</h2>
+    <p class="lead">When the group stage ends, anyone whose team is knocked out is drawn one of the surviving teams to back through the knockouts. If the team you're given goes on to win the World Cup, you take the mini-prize${scPrizeText()?`: <b>${esc(scPrizeText())}</b>`:''}. The main prize still goes to whoever owns the champion.</p>`:''}
+    ${(S.config.pot||S.config.prizes.first||S.config.prizes.second||S.config.prizes.spoon||S.config.prizes.secondChance)?`<h2 style="font-size:15px">Prizes</h2>${S.config.pot?`<p class="lead">Pot: ${esc(S.config.pot)}</p>`:""}
+      ${S.config.prizes.first?`<p class="note">🏆 Winner: ${esc(S.config.prizes.first)}</p>`:""}
       ${S.config.prizes.second?`<p class="note">2nd: ${esc(S.config.prizes.second)}</p>`:""}
+      ${S.config.prizes.secondChance?`<p class="note">🎲 Second-chance mini-prize: ${esc(S.config.prizes.secondChance)}</p>`:""}
       ${S.config.prizes.spoon?`<p class="note">Wooden spoon (last): ${esc(S.config.prizes.spoon)}</p>`:""}`:""}</div>`;
 }
 function loadPay(){DB.loadPayments().then(d=>{PAY=d||[];render();}).catch(e=>{console.error(e);PAY=[];render();});}
@@ -1105,7 +1160,7 @@ function viewOrg(){
   html+=`</div>`;
 
   if(S.config.drawDone){
-    html+=`<div class="card"><h2>Group results</h2><p class="lead">Enter scores after each round. Points update instantly. Auto-fetched scores (if you set up the API) show as suggestions to confirm.</p>${(()=>{const pd=pendingMatches();return pd.length?`<div class="good" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px"><span>🔵 ${pd.length} new result${pd.length===1?'':'s'} from the API to review below.</span><button class="btn sm" id="o_cfmall">Confirm all ${pd.length}</button></div>`:'';})()}`;
+    html+=`<div class="card"><details ${S.config.knockoutFocus?'':'open'}><summary style="cursor:pointer"><h2 style="display:inline-block;margin:0">Group results</h2>${S.config.knockoutFocus?' <span class="note">— hidden (knockout focus on)</span>':''}</summary><p class="lead">Enter scores after each round. Points update instantly. Auto-fetched scores (if you set up the API) show as suggestions to confirm.</p>${(()=>{const pd=pendingMatches();return pd.length?`<div class="good" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px"><span>🔵 ${pd.length} new result${pd.length===1?'':'s'} from the API to review below.</span><button class="btn sm" id="o_cfmall">Confirm all ${pd.length}</button></div>`:'';})()}`;
     if(CONFIGURED) html+=`<div class="row" style="margin:0 0 12px"><button class="btn ghost sm" id="o_syncnow">🔄 Sync results from API now</button> <span class="note">Pulls finished match scores on demand, then use Confirm above.</span></div>`;
     if(lc(u.email)===lc(S.config.chatPoster||"")) html+=`<div class="row" style="margin:0 0 12px"><button class="btn sm" id="o_postchat">📣 Post new results to Chat</button> <span class="note">Sends confirmed results not yet posted to your Chat space.</span></div>`;
     html+=`<div class="row" style="margin:0 0 12px;gap:6px;align-items:center"><span class="note">View results:</span>
@@ -1126,7 +1181,7 @@ function viewOrg(){
       });
       if(lastDay!==null)html+=`</fieldset>`;
     }
-    html+=`</div>`;
+    html+=`</details></div>`;
 
     html+=`<div class="card"><h2>Knockout progression</h2>
       <p class="lead">Tick the teams that reached each stage; bonuses apply automatically.</p>
@@ -1157,9 +1212,12 @@ function viewOrg(){
       <label class="fld"><span class="lbl">1st place prize</span><input id="c_p1" value="${esc(S.config.prizes.first)}"></label>
       <label class="fld"><span class="lbl">2nd place prize</span><input id="c_p2" value="${esc(S.config.prizes.second)}"></label>
       <label class="fld"><span class="lbl">Wooden spoon (last)</span><input id="c_ps" value="${esc(S.config.prizes.spoon)}"></label>
+      <label class="fld"><span class="lbl">🎲 Second-chance (mini) prize</span><input id="c_psc" value="${esc(S.config.prizes.secondChance||'')}"></label>
     </div>
     <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_simple" ${S.config.simpleMode?"checked":""}> <span>Simple mode — winner is whoever owns the champion. Hides the points system and shows wins/losses (<span class="pip W"></span> win <span class="pip D"></span> draw <span class="pip L"></span> loss) instead.</span></label>
     <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_shared" ${S.config.sharedTeams?"checked":""}> <span>Shared teams (syndicates) — only matters if more than 48 people join. Each player gets one team; the extra players share a team with someone (and split any prize), so nobody is left out.</span></label>
+    <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_sc" ${S.config.secondChanceEnabled?"checked":""}> <span>🎲 Second-chance draw — once group teams are out, knocked-out players are redrawn a surviving team to back, and the champion's backer wins a mini-prize. Adds second-chance info to the <b>Knockouts</b> tab and a <b>Run</b> button under Knockout progression.</span></label>
+    <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_kfocus" ${S.config.knockoutFocus?"checked":""}> <span>Knockout focus — now the group stage is done, hide group-stage scores and open the app on the <b>Knockouts</b> tab.</span></label>
     <label class="toggle" style="margin:2px 0 10px"><input type="checkbox" id="c_paid" ${S.config.paidMode?"checked":""}> <span>Paid sweepstake — adds a private <b>💷 Payments</b> tab (only you, the organiser, can see it) to track who's paid.</span></label>
     <label class="fld" style="max-width:220px"><span class="lbl">Entry fee per player ($)</span><input id="c_fee" type="number" min="0" step="0.01" inputmode="decimal" value="${S.config.entryFee!=null?esc(String(S.config.entryFee)):''}" placeholder="e.g. 5"></label>
     <button class="btn" id="c_save">Save event details</button></div>`;
@@ -1249,6 +1307,7 @@ function wire(){
     toast(r&&r.demo?"Demo: no live API to sync":(n?`Synced — ${n} finished match${n===1?'':'es'} found`:"Synced — no finished matches yet"));
   });
   document.querySelectorAll("[data-rv]").forEach(b=>b.onclick=()=>{resultsView=b.dataset.rv;render();});
+  document.querySelectorAll("[data-kv]").forEach(b=>b.onclick=()=>{koView=b.dataset.kv;render();});
   document.querySelectorAll("input[data-ko]").forEach(cb=>cb.onchange=()=>{
     const k=cb.dataset.ko,t=cb.value;const ki=STAGES.findIndex(z=>z.key===k);
     if(cb.checked)guard(async()=>{await DB.setAdvanced(t,[k],[]);});
@@ -1280,8 +1339,10 @@ function wire(){
   });
   if($("#c_save"))$("#c_save").onclick=()=>guard(async()=>{
     await DB.setConfig({header:$("#c_header").value.trim()||S.config.header,accentColor:$("#c_col").value,
-      pot:$("#c_pot").value.trim(),prizes:{first:$("#c_p1").value.trim(),second:$("#c_p2").value.trim(),spoon:$("#c_ps").value.trim()},
+      pot:$("#c_pot").value.trim(),prizes:{first:$("#c_p1").value.trim(),second:$("#c_p2").value.trim(),spoon:$("#c_ps").value.trim(),secondChance:$("#c_psc")?$("#c_psc").value.trim():(S.config.prizes.secondChance||"")},
       simpleMode:$("#c_simple").checked,sharedTeams:$("#c_shared").checked,
+      secondChanceEnabled:$("#c_sc")?$("#c_sc").checked:!!S.config.secondChanceEnabled,
+      knockoutFocus:$("#c_kfocus")?$("#c_kfocus").checked:!!S.config.knockoutFocus,
       paidMode:$("#c_paid").checked,entryFee:($("#c_fee").value.trim()===""?0:Number($("#c_fee").value))});
   },"Saved");
   if($("#org_add"))$("#org_add").onclick=()=>{const e=lc($("#org_email").value.trim());if(!e){toast("Enter an email");return;}
@@ -1324,7 +1385,7 @@ async function boot(){
     S=await DB.loadPool(poolId);
     if(!S){renderMissingPool(poolId);return;}
     computeMe();
-    if(S.config.drawDone){tab=(meId&&S.assignments[meId])?"mine":"board";}else{tab="join";}
+    if(S.config.drawDone){tab=(currentStageIndex()>=1||S.config.knockoutFocus)?"knock":((meId&&S.assignments[meId])?"mine":"board");}else{tab="join";}
     render();
     let timer=null;
     unsub=DB.subscribe(poolId,()=>{clearTimeout(timer);timer=setTimeout(refresh,250);});
