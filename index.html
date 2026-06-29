@@ -531,6 +531,10 @@ function scRunDraw(){
 }
 // "Sam Williams" -> "Sam W" (first name + last initial); single names unchanged.
 function shortName(n){const p=(n||"").trim().split(/\s+/);return p.length<2?(n||""):p[0]+" "+p[p.length-1][0].toUpperCase();}
+// Wooden-spoon pin: organiser can pin the 🥄 to a person (config.spoonName). Matches
+// their full name OR short name ("Zoe Pacheco" / "Zoe P"), so it follows them onto the
+// leaderboard, the knockout table, and the bracket chips alike.
+function isSpoon(name){const s=lc((S.config.spoonName||"").trim());if(!s||!name)return false;const n=lc(name);return n===s||lc(shortName(name))===s;}
 function safeColor(c){return /^#[0-9a-fA-F]{6}$/.test((c||"").trim())?c.trim():"#22d37a";}
 // Group matches with an unconfirmed API-suggested score (pending, no manual score yet).
 function pendingMatches(){const out=[];Object.keys(GROUPS).forEach(g=>{(S.results.group[g]||[]).forEach((m,i)=>{if(m&&m.source==='auto'&&m.pa!==''&&m.pb!==''&&(m.sa===''||m.sb===''))out.push({g,i,pa:Number(m.pa),pb:Number(m.pb)});});});return out;}
@@ -951,7 +955,7 @@ function viewBoard(){
   const champOwners=(simple&&champ)?Object.entries(S.assignments).filter(([id,a])=>a.includes(champ)).map(([id])=>id):[];
   const groupPhase=S.config.drawDone&&currentStageIndex()===0;
   const card=(r)=>{
-    const top=r.rank===1?"top":"";const spoon=(r.id===last&&S.config.drawDone)?"spoon":"";const me=r.id===meId?"me":"";
+    const top=r.rank===1?"top":"";const spoon=(S.config.drawDone&&(S.config.spoonName?isSpoon(r.name):r.id===last))?"spoon":"";const me=r.id===meId?"me":"";
     const crown=simple?(champOwners.includes(r.id)?' 🏆':''):(r.rank===1&&r.pts>0?' 👑':'');
     const teams=(S.assignments[r.id]||[]);
     const strip=teams.slice()
@@ -1084,7 +1088,8 @@ function koStatus(m){
 }
 function koOwnerSuffix(team){
   if(!team||!S.config.drawDone)return "";
-  const o=ownersOf(team).map(shortName);const s=scOwnersOf(team).map(shortName);
+  const tag=n=>shortName(n)+(isSpoon(n)?" 🥄":"");
+  const o=ownersOf(team).map(tag);const s=scOwnersOf(team).map(tag);
   const all=o.concat(s.length?["🎲 "+s.join("/")]:[]);
   return all.length?` <span class="own">· ${esc(all.join(", "))}</span>`:"";
 }
@@ -1188,7 +1193,7 @@ function viewKnock(){
     const subs=scOwnersOf(t).map(shortName);
     return `<tr>
       <td>${flag(t)} ${esc(t)} <span class="grp">${groupOf(t)}</span></td>
-      <td>${esc(ownersOf(t).join(", ")||'—')}</td>
+      <td>${ownersOf(t).length?ownersOf(t).map(n=>esc(n)+(isSpoon(n)?' 🥄':'')).join(", "):'—'}</td>
       ${scCol?`<td>${subs.length?'🎲 '+esc(subs.join(", ")):'<span class="note">—</span>'}</td>`:''}
     </tr>`;
   }).join("");
@@ -1354,6 +1359,7 @@ function viewOrg(){
       <label class="fld"><span class="lbl">1st place prize</span><input id="c_p1" value="${esc(S.config.prizes.first)}"></label>
       <label class="fld"><span class="lbl">2nd place prize</span><input id="c_p2" value="${esc(S.config.prizes.second)}"></label>
       <label class="fld"><span class="lbl">Wooden spoon (last)</span><input id="c_ps" value="${esc(S.config.prizes.spoon)}"></label>
+      <label class="fld"><span class="lbl">🥄 Pin wooden spoon to (name)</span><input id="c_spoonpin" value="${esc(S.config.spoonName||'')}" placeholder="blank = auto (last place)"></label>
       <label class="fld"><span class="lbl">🎲 Second-chance (mini) prize</span><input id="c_psc" value="${esc(S.config.prizes.secondChance||'')}"></label>
     </div>
     <label class="toggle" style="margin:2px 0 14px"><input type="checkbox" id="c_simple" ${S.config.simpleMode?"checked":""}> <span>Simple mode — winner is whoever owns the champion. Hides the points system and shows wins/losses (<span class="pip W"></span> win <span class="pip D"></span> draw <span class="pip L"></span> loss) instead.</span></label>
@@ -1509,6 +1515,7 @@ function wire(){
       secondChanceEnabled:$("#c_sc")?$("#c_sc").checked:!!S.config.secondChanceEnabled,
       knockoutFocus:$("#c_kfocus")?$("#c_kfocus").checked:!!S.config.knockoutFocus,
       roundupEnabled:$("#c_roundup")?$("#c_roundup").checked:!!S.config.roundupEnabled,
+      spoonName:$("#c_spoonpin")?$("#c_spoonpin").value.trim():(S.config.spoonName||""),
       paidMode:$("#c_paid").checked,entryFee:($("#c_fee").value.trim()===""?0:Number($("#c_fee").value))});
   },"Saved");
   if($("#org_add"))$("#org_add").onclick=()=>{const e=lc($("#org_email").value.trim());if(!e){toast("Enter an email");return;}
