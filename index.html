@@ -308,6 +308,45 @@ function flag(t){
   if(!c) return '<span class="noflag" aria-hidden="true">&#9917;</span>';
   return `<img class="flag" src="https://flagcdn.com/w40/${c}.png" srcset="https://flagcdn.com/w80/${c}.png 2x" width="22" alt="" loading="lazy">`;
 }
+// Emoji flag for Chat messages (flag() above returns an <img> for the web UI).
+function flagEmojiFor(team){
+  const c=FLAG_CODE[team]; if(!c)return "⚽";
+  const sub=c.match(/^gb-(\w+)$/);
+  if(sub){const tags=[...("gb"+sub[1])].map(x=>String.fromCodePoint(0xE0000+x.charCodeAt(0))).join("");return String.fromCodePoint(0x1F3F4)+tags+String.fromCodePoint(0xE007F);}
+  return c.toUpperCase().replace(/[A-Z]/g,x=>String.fromCodePoint(0x1F1E6+x.charCodeAt(0)-65));
+}
+// Strip Chat control chars from an attacker-controlled name (mentions/links/formatting).
+function chatSafeName(n){return (n||"").replace(/[<>*_~`@]/g,"").trim().slice(0,40);}
+const KO_STAGE_LABEL={LAST_32:'Round of 32',LAST_16:'Round of 16',QUARTER_FINALS:'Quarter-final',SEMI_FINALS:'Semi-final',THIRD_PLACE:'Third place',FINAL:'Final',GROUP_STAGE:'Group stage'};
+// Pick the match to thread by KICKOFF TIME vs now (the feed's live status lags, but the
+// fixture dates are accurate). Prefer one in its live window (15 min before KO → 2.5 h after),
+// else the next upcoming, else the most recent — all with both teams confirmed.
+function liveMatchForThread(){
+  const ms=((S.config&&S.config.knockoutMatches)||[]).filter(m=>m.date&&m.home&&m.away);
+  if(!ms.length)return null;
+  const now=Date.now(),H=36e5,t=m=>new Date(m.date).getTime();
+  const done=m=>m.status==='FINISHED'||m.status==='AWARDED';
+  // Already kicked off and still within ~2.5h (in play / just finished): newest kickoff first,
+  // so a match being played beats one that's merely about to start.
+  const started=ms.filter(m=>now-t(m)>=0&&now-t(m)<=2.5*H).sort((a,b)=>t(b)-t(a));
+  if(started.length){const m=started[0];return {...m,_liveCount:started.length,...(done(m)?{_past:true}:{})};}
+  // About to kick off (next ~15 min), else next upcoming.
+  const up=ms.filter(m=>t(m)>now).sort((a,b)=>t(a)-t(b));
+  if(up.length)return {...up[0],_upcoming:true};
+  // Most recent past — but only if recent (don't resurface the Final forever post-tournament).
+  const past=ms.filter(m=>t(m)<=now).sort((a,b)=>t(b)-t(a));
+  if(past.length&&now-t(past[0])<=36*H)return {...past[0],_past:true};
+  return null;
+}
+// "Battle begins" Chat message for one match: plain text + emoji flags + *bold*, owners (+ 🎲 backers).
+function matchThreadMessage(m){
+  const h=koCanon(m.home),a=koCanon(m.away),fh=flagEmojiFor(h),fa=flagEmojiFor(a);
+  const stage=KO_STAGE_LABEL[m.stage]||'Knockouts';
+  const when=m.date?new Date(m.date).toLocaleString(undefined,{weekday:'short',day:'numeric',month:'short',hour:'numeric',minute:'2-digit',timeZoneName:'short'}):'';
+  const ownLine=team=>{const o=ownersOf(team).map(n=>chatSafeName(shortName(n))),s=scOwnersOf(team).map(n=>chatSafeName(shortName(n)));let str=o.length?o.join(', '):'—';if(s.length)str+=` 🎲 ${s.join(', ')}`;return str;};
+  const head=m._upcoming?'⚔️ *Up next!*':m._past?'⏱️ *Just played*':'⚔️ *The battle begins!*';
+  return `${head}\n🏆 ${stage}${when?` · ${when}`:''}\n\n${fh} *${h}*  vs  *${a}* ${fa}\n\n${fh} ${h} — ${ownLine(h)}\n${fa} ${a} — ${ownLine(a)}\n\nWho's taking the bragging rights? 👏`;
+}
 // strength tier 1 (strongest) -> 4, used only to spread teams fairly in the draw
 const TIER = {
   "Spain":1,"Argentina":1,"France":1,"England":1,"Brazil":1,"Germany":1,"Portugal":1,"Netherlands":1,
@@ -743,6 +782,7 @@ const SupaDB = {
   async runSync(){const {data,error}=await sb.functions.invoke('sync-results',{body:{}});if(error){let m="Sync failed";try{const j=await error.context.json();if(j&&j.error)m=j.error;}catch(_){}throw new Error(m);}return data;},
   async roundupNow(){const {data,error}=await sb.functions.invoke('knockout-roundup',{body:{pool_id:poolId,post:1}});if(error){let m="Round-up failed";if(error.context&&error.context.status===404)m="Round-up function isn't deployed yet — deploy 'knockout-roundup' in Supabase.";else{try{const j=await error.context.json();if(j&&j.error)m=j.error;}catch(_){}}throw new Error(m);}return data;},
   async knockoutAdvances(){const {data,error}=await sb.functions.invoke('knockout-roundup',{body:{pool_id:poolId,post:0}});if(error){let m="Couldn't reach the round-up function";if(error.context&&error.context.status===404)m="Round-up function isn't deployed yet — deploy 'knockout-roundup' in Supabase.";else{try{const j=await error.context.json();if(j&&j.error)m=j.error;}catch(_){}}throw new Error(m);}return (data&&data.advanced)||{};},
+  async postChat(text){const {data,error}=await sb.functions.invoke('knockout-roundup',{body:{pool_id:poolId,mode:'relay',text}});if(error){let m="Couldn't post to Chat";if(error.context&&error.context.status===404)m="The Chat function isn't deployed yet — redeploy 'knockout-roundup'.";else{try{const j=await error.context.json();if(j&&j.error)m=j.error;}catch(_){}}throw new Error(m);}return data;},
   async setStage(stage,teams){
     await sb.from('advanced').delete().eq('pool_id',poolId).eq('stage',stage);
     if(teams.length)await sb.from('advanced').insert(teams.map(t=>({pool_id:poolId,stage,team:t})));
@@ -804,6 +844,7 @@ const DemoDB={
   async setStage(stage,teams){const o=demoAll();const p=demoPool(o,poolId);p.advanced=p.advanced.filter(r=>r.stage!==stage).concat(teams.map(t=>({stage,team:t})));demoWrite(o);},
   async roundupNow(){return {ok:true,demo:true,pools:[{posted:false,results:0,upcoming:0}]};},
   async knockoutAdvances(){return {};},
+  async postChat(){return {ok:true,demo:true};},
   async setAdvanced(team,add,remove){const o=demoAll();const p=demoPool(o,poolId);
     (add||[]).forEach(s=>{if(!p.advanced.some(r=>r.stage===s&&r.team===team))p.advanced.push({stage:s,team});});
     if(remove&&remove.length)p.advanced=p.advanced.filter(r=>!(r.team===team&&remove.includes(r.stage)));demoWrite(o);},
@@ -1380,8 +1421,8 @@ function viewOrg(){
       <p class="note">Fills R32 with the 12 group winners, 12 runners-up and 8 best third-placed teams (needs all group scores in). You can still adjust by hand.</p>`;
     html+=`<div class="row" style="margin:10px 0;gap:8px;flex-wrap:wrap">
         <button class="btn ghost sm" id="o_koapi">🔄 Pull knockout results from API now</button>
-        ${lc(u.email)===lc(S.config.chatPoster||"")?`<button class="btn sm" id="o_roundup">📣 Post knockout round-up to Chat</button>`:''}
-      </div><p class="note">Knockout results auto-update from the API every ~30 minutes — Pull to refresh on demand${lc(u.email)===lc(S.config.chatPoster||"")?'; the Chat round-up posts at 8am &amp; 6pm NZT':''}.</p>`;
+        ${lc(u.email)===lc(S.config.chatPoster||"")?`<button class="btn sm" id="o_roundup">📣 Post knockout round-up to Chat</button> <button class="btn sm" id="o_matchthread">⚔️ Post a match thread</button>`:''}
+      </div><p class="note">Knockout results auto-update from the API every ~30 minutes — Pull to refresh on demand${lc(u.email)===lc(S.config.chatPoster||"")?'; the round-up posts at 8am &amp; 6pm NZT, and "match thread" posts the current live match (you preview it first)':''}.</p>`;
     if(scEnabled()){
       const r32n=(S.results.advanced.R32||[]).length,scd=scDraw(),scEl=scEligible();
       const orphans=scd?Object.entries(scd).filter(([id,t])=>!(S.results.advanced.R32||[]).includes(t)).length:0;
@@ -1533,6 +1574,18 @@ function wire(){
     const r=await DB.roundupNow();const p=(r&&r.pools&&r.pools[0])||{};
     toast(r&&r.demo?"Demo: no Chat in demo":(p.posted?`Posted round-up — ${p.results} result${p.results===1?'':'s'}, ${p.upcoming} upcoming`:"Nothing to post right now"));
   });
+  if($("#o_matchthread"))$("#o_matchthread").onclick=()=>{
+    const m=liveMatchForThread();
+    if(!m){toast("No match with confirmed teams to post yet");return;}
+    const text=matchThreadMessage(m);
+    const note=m._upcoming?'Nothing live right now — this is the next scheduled match.':m._past?'Nothing live right now — this is the most recent match.':(m._liveCount>1?`Most recently kicked-off of ${m._liveCount} matches live now.`:'This match is live now.');
+    modal(`<h2 style="font-family:Anton;font-weight:400">Post match thread?</h2>
+      <p class="lead">${note} Preview below:</p>
+      <pre style="white-space:pre-wrap;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:12px;margin:8px 0;font-family:inherit;font-size:13.5px;line-height:1.5">${esc(text)}</pre>
+      <p class="note">The * marks render as *bold* in Google Chat. Posts to your Chat space.</p>
+      <div class="row"><button class="btn" id="mt_go">Send to Chat</button><button class="btn ghost" onclick="closeModal()">Cancel</button></div>`);
+    $("#mt_go").onclick=()=>{closeModal();guard(async()=>{await DB.postChat(text);},"Match thread posted");};
+  };
   if($("#o_koapi"))$("#o_koapi").onclick=async()=>{
     toast("Checking the API…");
     let adv;try{adv=await DB.knockoutAdvances();}catch(e){toast(e.message||"Couldn't reach the API");return;}
