@@ -345,7 +345,7 @@ function matchThreadMessage(m){
   const when=m.date?new Date(m.date).toLocaleString(undefined,{weekday:'short',day:'numeric',month:'short',hour:'numeric',minute:'2-digit',timeZoneName:'short'}):'';
   const ownLine=team=>{const o=ownersOf(team).map(n=>chatSafeName(shortName(n))),s=scOwnersOf(team).map(n=>chatSafeName(shortName(n)));let str=o.length?o.join(', '):'—';if(s.length)str+=` 🎲 ${s.join(', ')}`;return str;};
   const head=m._upcoming?'⚔️ *Up next!*':m._past?'⏱️ *Just played*':'⚔️ *The battle begins!*';
-  return `${head}\n🏆 ${stage}${when?` · ${when}`:''}\n\n${fh} *${h}*  vs  *${a}* ${fa}\n\n${fh} ${h} — ${ownLine(h)}\n${fa} ${a} — ${ownLine(a)}\n\nWho's taking the bragging rights? 👏`;
+  return `🧵 *Match Thread*\n${head}\n🏆 ${stage}${when?` · ${when}`:''}\n\n${fh} *${h}*  vs  *${a}* ${fa}\n\n${fh} ${h} — ${ownLine(h)}\n${fa} ${a} — ${ownLine(a)}\n\nWho's taking the bragging rights? 👏`;
 }
 // strength tier 1 (strongest) -> 4, used only to spread teams fairly in the draw
 const TIER = {
