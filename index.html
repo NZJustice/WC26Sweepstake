@@ -1078,8 +1078,13 @@ function koWinner(m){
   if(!m)return null;const h=koCanon(m.home),a=koCanon(m.away);
   if(m.winner==='HOME_TEAM')return h;
   if(m.winner==='AWAY_TEAM')return a;
-  if(m.pens&&m.pens.h!=null&&m.pens.a!=null&&m.pens.h!==m.pens.a)return m.pens.h>m.pens.a?h:a;
-  if((m.status==='FINISHED'||m.status==='AWARDED')&&h&&a){const nx=KO_NEXT[m.stage];if(nx){const adv=new Set(S.results.advanced[nx]||[]);if(adv.has(h)&&!adv.has(a))return h;if(adv.has(a)&&!adv.has(h))return a;}}
+  const fin=m.status==='FINISHED'||m.status==='AWARDED';
+  if(fin&&h&&a){
+    // No feed winner — take the bigger number: penalties if decisive, else the final score.
+    if(m.pens&&m.pens.h!=null&&m.pens.a!=null&&m.pens.h!==m.pens.a)return m.pens.h>m.pens.a?h:a;
+    if(m.sh!=null&&m.sh!==''&&m.sa!=null&&m.sa!==''&&Number(m.sh)!==Number(m.sa))return Number(m.sh)>Number(m.sa)?h:a;
+    const nx=KO_NEXT[m.stage];if(nx){const adv=new Set(S.results.advanced[nx]||[]);if(adv.has(h)&&!adv.has(a))return h;if(adv.has(a)&&!adv.has(h))return a;}
+  }
   return null;
 }
 function koDate(m){
@@ -1110,8 +1115,7 @@ function koMatchCard(m){
   const fin=m.status==="FINISHED"||m.status==="AWARDED";
   const st=koStatus(m);
   const h=koCanon(m.home),a=koCanon(m.away),w=fin?koWinner(m):null;
-  const pen=fin&&(m.pens||(m.sh!=null&&m.sh!==""&&m.sh===m.sa));
-  const penTxt=(m.pens&&m.pens.h!=null)?` · ${m.pens.h}–${m.pens.a} pens`:(pen?" · pens":"");
+  const penTxt=(m.pens&&m.pens.h!=null&&m.pens.a!=null&&m.pens.h!==m.pens.a)?` · ${m.pens.h}–${m.pens.a} pens`:"";
   const row=(team,score,win)=>{
     if(!team)return `<div class="koteam tbd"><span class="koshield">&#128737;</span><span class="nm">TBD</span></div>`;
     return `<div class="koteam ${win?"win":(fin?"lose":"")}">${flag(team)} <span class="nm">${esc(team)}${koOwnerSuffix(team)}</span>${(score!=null&&score!=="")?`<span class="sc">${esc(String(score))}</span>`:""}</div>`;
