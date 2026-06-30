@@ -1158,14 +1158,40 @@ function orderBracket(byStage){
         const m=exp.length?list.find(x=>!used.has(x)&&exp.some(t=>has(x,t))):null; if(m){slot[s]=m;used.add(m);}}
       const rem=list.filter(x=>!used.has(x)).sort((a,b)=>new Date(a.date||0)-new Date(b.date||0));
       for(const s of order){if(!slot[s]&&rem.length)slot[s]=rem.shift();}
+      // Feed fixtures can lag actual advancement: a team that won its previous round
+      // (so it's in S.results.advanced) may have no next-round fixture yet, or only a
+      // half-filled one (one side known, the other still null). Derive each slot's two
+      // teams from its feeders' winners: synthesise a match for a missing fixture, and
+      // backfill an empty side of a real fixture. Never overwrite a side the feed gave
+      // us, never override a real result/date, and leave a side TBD if its feeder winner
+      // is unknown — so the bracket tracks the standings without inventing outcomes.
+      const taken=t=>!!t&&order.some(o=>{const m=slot[o];return m&&(koCanon(m.home)===t||koCanon(m.away)===t);});
+      for(const s of order){
+        const [fa,fb]=KO_FEEDERS[s].map(winnerOf);
+        if(!fa&&!fb)continue;                       // both feeders undecided → leave TBD
+        const m=slot[s];
+        if(!m){const dh=(fa&&!taken(fa))?fa:null,da=(fb&&!taken(fb))?fb:null;if(dh||da)slot[s]={stage:key,home:dh,away:da,sh:null,sa:null,status:"SCHEDULED",winner:null,synthetic:true};continue;}
+        if(m.home&&m.away)continue;                 // real fixture already has both teams
+        // Fill the empty side of a half-populated real fixture with the feeder winner the
+        // feed hasn't shown yet. Orientation-agnostic: the feed may have put its known team
+        // on either side, so we pick whichever feeder winner isn't already present rather
+        // than assuming home=feederA/away=feederB. Skip a winner already shown elsewhere in
+        // this round (dupe guard). Clone first — never mutate S.config.knockoutMatches.
+        const have=koCanon(m.home)||koCanon(m.away);
+        const fill=[fa,fb].find(t=>t&&t!==have&&!taken(t));
+        if(fill){const c={...m};if(!c.home)c.home=fill;else c.away=fill;slot[s]=c;}
+      }
     };
     place('LAST_16',KO_R16_ORDER);place('QUARTER_FINALS',KO_QF_ORDER);place('SEMI_FINALS',KO_SF_ORDER);place('FINAL',KO_F_ORDER);
+    // Keep every round's full slot count (TBD placeholder for any still-empty slot) so the
+    // flex tree stays aligned and connectors line up even when a round is only partly known.
+    const ph=(s,key)=>slot[s]||{stage:key,home:null,away:null,sh:null,sa:null,status:"SCHEDULED",winner:null,synthetic:true};
     return {
       LAST_32:KO_R32_ORDER.map(s=>slot[s]).filter(Boolean),
-      LAST_16:KO_R16_ORDER.map(s=>slot[s]).filter(Boolean),
-      QUARTER_FINALS:KO_QF_ORDER.map(s=>slot[s]).filter(Boolean),
-      SEMI_FINALS:KO_SF_ORDER.map(s=>slot[s]).filter(Boolean),
-      FINAL:KO_F_ORDER.map(s=>slot[s]).filter(Boolean)
+      LAST_16:KO_R16_ORDER.map(s=>ph(s,'LAST_16')),
+      QUARTER_FINALS:KO_QF_ORDER.map(s=>ph(s,'QUARTER_FINALS')),
+      SEMI_FINALS:KO_SF_ORDER.map(s=>ph(s,'SEMI_FINALS')),
+      FINAL:KO_F_ORDER.map(s=>ph(s,'FINAL'))
     };
   }catch(e){return null;}
 }
@@ -1174,8 +1200,10 @@ function viewBracketGraphic(){
   if(!ms.length)return viewBracket();
   const ORDER=[["LAST_32","Round of 32"],["LAST_16","Round of 16"],["QUARTER_FINALS","Quarter-final"],["SEMI_FINALS","Semi-final"],["FINAL","Final"]];
   const byStage={};ms.forEach(m=>{(byStage[m.stage]=byStage[m.stage]||[]).push(m);});
-  const ordered=orderBracket(byStage);   // true 2026 bracket order, or null → fall back to date order
-  const cols=ORDER.filter(([k])=>byStage[k]&&byStage[k].length).map(([k,label])=>{
+  const ordered=orderBracket(byStage);   // true 2026 bracket order (with synthetic slots derived from feeder winners), or null → fall back to date order
+  // Show a round once we have either feed fixtures for it or synthesised slots from
+  // feeder winners — so an advanced team's next round appears even before its feed fixture lands.
+  const cols=ORDER.filter(([k])=>(byStage[k]&&byStage[k].length)||(ordered&&ordered[k]&&ordered[k].length)).map(([k,label])=>{
     const list=(ordered&&ordered[k])?ordered[k]:byStage[k].slice().sort((a,b)=>new Date(a.date||0)-new Date(b.date||0));
     return `<div class="koround"><div class="korh">${label}</div>${list.map(m=>`<div class="koslot">${koMatchCard(m)}</div>`).join("")}</div>`;
   }).join("");
