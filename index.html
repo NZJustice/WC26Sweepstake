@@ -318,6 +318,7 @@ function flagEmojiFor(team){
 // Strip Chat control chars from an attacker-controlled name (mentions/links/formatting).
 function chatSafeName(n){return (n||"").replace(/[<>*_~`@]/g,"").trim().slice(0,40);}
 const KO_STAGE_LABEL={LAST_32:'Round of 32',LAST_16:'Round of 16',QUARTER_FINALS:'Quarter-final',SEMI_FINALS:'Semi-final',THIRD_PLACE:'Third place',FINAL:'Final',GROUP_STAGE:'Group stage'};
+const KO_STAGE_SHORT={LAST_32:'R32',LAST_16:'R16',QUARTER_FINALS:'QF',SEMI_FINALS:'SF',THIRD_PLACE:'3rd place',FINAL:'Final'};
 // Pick the match to thread by KICKOFF TIME vs now (the feed's live status lags, but the
 // fixture dates are accurate). Prefer one in its live window (15 min before KO → 2.5 h after),
 // else the next upcoming, else the most recent — all with both teams confirmed.
@@ -1052,22 +1053,32 @@ function viewMine(){
   const teams=S.assignments[meId]||[];
   const rows=standings();const rank=rows.findIndex(r=>r.id===meId)+1;
   const upcoming=teams.flatMap(t=>teamFixtures(t).filter(f=>!f.score)).sort((a,b)=>a.sort-b.sort)[0];
+  // Next knockout outing across my still-in teams (+ my second-chance team): the
+  // soonest unfinished knockout fixture. Takes over from the group "Next up" banner
+  // once the groups are done.
+  const scT=scTeamOf(meId);
+  const watch=[...new Set(teams.filter(t=>!isOut(t)).concat(scT&&!isOut(scT)?[scT]:[]))];
+  const nextKo=watch.flatMap(t=>teamKoMatches(t).filter(m=>m.status!=='FINISHED'&&m.status!=='AWARDED').map(m=>({m,t}))).sort((x,y)=>koSortTime(x.m)-koSortTime(y.m))[0];
   const blocks=teams.map(t=>{
     const fx=teamFixtures(t).map(f=>{const opp=f.t0===t?f.t1:f.t0;const res=f.score?` <span class="pts" style="font-size:13px">${f.score}</span>`:"";
       return `<div style="font-size:13px;color:var(--ink-dim);padding:2px 0">${f.dayLabel}${f.timeLabel?" · "+f.timeLabel:""} v ${flag(opp)} ${esc(opp)}${res}</div>`;}).join("");
-    return `<div style="margin-bottom:12px">${teamChip(t)}${statusTag(t)} <span class="note">${simple?teamPips(t):teamPoints(t)+' pts'}</span>${(()=>{const sh=coOwners(t,meId);return sh.length?` <span class="grp">· shared with ${esc(sh.join(", "))}</span>`:'';})()}${fx}</div>`;
+    const kfx=teamKoMatches(t).map(m=>koFxLine(m,t)).join("");
+    return `<div style="margin-bottom:12px">${teamChip(t)}${statusTag(t)} <span class="note">${simple?teamPips(t):teamPoints(t)+' pts'}</span>${(()=>{const sh=coOwners(t,meId);return sh.length?` <span class="grp">· shared with ${esc(sh.join(", "))}</span>`:'';})()}${fx}${kfx}</div>`;
   }).join("")||'<div class="empty">No teams yet — waiting on the draw.</div>';
-  const scT=scTeamOf(meId);
   const scCo=scT?scOwnersOf(scT).filter(n=>!me||n!==me.name):[];
+  const scFx=scT?teamKoMatches(scT).map(m=>koFxLine(m,scT)).join(""):'';
   const scBlock=scT?`<div style="margin-top:14px"><div class="note">🎲 Second chance</div>
-    <div style="margin-top:6px">${teamChip(scT)}${statusTag(scT)} <span class="grp">· special prize if ${esc(scT)} wins the cup${scCo.length?` (with ${esc(scCo.join(", "))})`:''}</span></div></div>`:'';
+    <div style="margin-top:6px">${teamChip(scT)}${statusTag(scT)} <span class="grp">· special prize if ${esc(scT)} wins the cup${scCo.length?` (with ${esc(scCo.join(", "))})`:''}</span></div>${scFx}</div>`:'';
   return `<div class="card"><h2>${esc(me.name)}</h2>
     <div class="stat">
       <div class="b"><div class="n">${simple?(function(){const f=playerForm(meId);return f.w+'-'+f.d+'-'+f.l;})():playerPoints(meId)}</div><div class="l">${simple?'W-D-L':'Points'}</div></div>
       <div class="b"><div class="n">#${rank}</div><div class="l">Position</div></div>
       <div class="b"><div class="n">${teams.filter(t=>!isOut(t)).length}/${teams.length}</div><div class="l">Teams still in</div></div>
     </div>
-    ${upcoming?`<div class="good" style="margin-top:14px">Next up: ${flag(upcoming.t0)} ${esc(upcoming.t0)} v ${esc(upcoming.t1)} ${flag(upcoming.t1)} &middot; ${upcoming.dayLabel}${upcoming.timeLabel?", "+upcoming.timeLabel:""}</div>`:""}
+    ${upcoming?`<div class="good" style="margin-top:14px">Next up: ${flag(upcoming.t0)} ${esc(upcoming.t0)} v ${esc(upcoming.t1)} ${flag(upcoming.t1)} &middot; ${upcoming.dayLabel}${upcoming.timeLabel?", "+upcoming.timeLabel:""}</div>`
+      :(nextKo?(()=>{const m=nextKo.m,h=koCanon(m.home),a=koCanon(m.away),live=koStatus(m).cls==='live';
+        const scNote=(scT&&nextKo.t===scT&&!teams.includes(scT))?' <span class="note">— your 🎲 second-chance team</span>':'';
+        return `<div class="good" style="margin-top:14px">${live?'🔴 On now':'Next up'}: ${h?flag(h)+' '+esc(h):'TBD'} v ${a?esc(a)+' '+flag(a):'TBD'} &middot; ${esc(KO_STAGE_LABEL[m.stage]||'Knockouts')}${m.date?' &middot; '+esc(koDate(m)):''}${scNote}</div>`;})():"")}
     <div style="margin-top:14px">${blocks}</div>${scBlock}
     <div class="row"><button class="btn ghost sm" id="m_share">Copy invite link</button>${guest?`<button class="btn ghost sm" id="m_pers">Copy my personal link</button>`:""}</div>
     <p class="note">${guest?"You joined as a guest — bookmark your personal link to return on any device, or sign in with Google to sync automatically.":"Signed in, your teams follow you on any device — no link needed."}</p></div>`;
@@ -1213,14 +1224,18 @@ function orderBracket(byStage){
         const m=slot[s];
         if(!m){const dh=(fa&&!taken(fa))?fa:null,da=(fb&&!taken(fb))?fb:null;if(dh||da)slot[s]={stage:key,home:dh,away:da,sh:null,sa:null,status:"SCHEDULED",winner:null,synthetic:true};continue;}
         if(m.home&&m.away)continue;                 // real fixture already has both teams
-        // Fill the empty side of a half-populated real fixture with the feeder winner the
-        // feed hasn't shown yet. Orientation-agnostic: the feed may have put its known team
-        // on either side, so we pick whichever feeder winner isn't already present rather
-        // than assuming home=feederA/away=feederB. Skip a winner already shown elsewhere in
-        // this round (dupe guard). Clone first — never mutate S.config.knockoutMatches.
-        const have=koCanon(m.home)||koCanon(m.away);
-        const fill=[fa,fb].find(t=>t&&t!==have&&!taken(t));
-        if(fill){const c={...m};if(!c.home)c.home=fill;else c.away=fill;slot[s]=c;}
+        // Fill EVERY empty side of a real fixture with a feeder winner the feed hasn't
+        // shown yet — the feed pre-creates next-round fixtures with one or BOTH sides
+        // null, so a single fill would drop the second winner. Orientation-agnostic:
+        // pick whichever feeder winners aren't already present rather than assuming
+        // home=feederA/away=feederB. Skip a winner already shown elsewhere in this
+        // round (dupe guard). Clone first — never mutate S.config.knockoutMatches.
+        const c={...m};
+        const avail=[fa,fb].filter(t=>t&&koCanon(c.home)!==t&&koCanon(c.away)!==t&&!taken(t));
+        let filled=false;
+        if(!c.home&&avail.length){c.home=avail.shift();filled=true;}
+        if(!c.away&&avail.length){c.away=avail.shift();filled=true;}
+        if(filled)slot[s]=c;
       }
     };
     place('LAST_16',KO_R16_ORDER);place('QUARTER_FINALS',KO_QF_ORDER);place('SEMI_FINALS',KO_SF_ORDER);place('FINAL',KO_F_ORDER);
@@ -1235,6 +1250,35 @@ function orderBracket(byStage){
       FINAL:KO_F_ORDER.map(s=>ph(s,'FINAL'))
     };
   }catch(e){return null;}
+}
+// Flattened knockout matches for per-team views: the DERIVED bracket slots when the slot
+// mapping works (so a backfilled/synthesised tie — e.g. a next-round match the feed hasn't
+// named both teams for yet — shows up for its owners too), else the raw feed fixtures.
+function koAllMatches(){
+  const ms=(S.config&&S.config.knockoutMatches)||[];
+  if(!ms.length)return [];
+  const byStage={};ms.forEach(m=>{(byStage[m.stage]=byStage[m.stage]||[]).push(m);});
+  const ob=orderBracket(byStage);
+  if(!ob)return ms;
+  return [...ob.LAST_32,...ob.LAST_16,...ob.QUARTER_FINALS,...ob.SEMI_FINALS,...ob.FINAL].filter(m=>m&&(m.home||m.away));
+}
+const koSortTime=m=>m.date?new Date(m.date).getTime():8.64e15;  // undated (TBD) sorts last
+function teamKoMatches(team){
+  return koAllMatches().filter(m=>koCanon(m.home)===team||koCanon(m.away)===team).sort((a,b)=>koSortTime(a)-koSortTime(b));
+}
+// One compact fixture line for a team's knockout match (My teams / second-chance blocks).
+// Score is my-team-first, with W/L once decided and a LIVE chip while in play.
+function koFxLine(m,team){
+  const h=koCanon(m.home),a=koCanon(m.away),opp=h===team?a:h;
+  const st=koStatus(m),fin=m.status==='FINISHED'||m.status==='AWARDED';
+  const when=m.date?koDate(m):'';
+  const mySc=h===team?m.sh:m.sa,oppSc=h===team?m.sa:m.sh;
+  const score=(m.sh!=null&&m.sa!=null&&(fin||st.cls==='live'))?` <span class="pts" style="font-size:13px">${esc(String(mySc))} - ${esc(String(oppSc))}</span>`:'';
+  const pens=(fin&&m.pens&&m.pens.h!=null&&m.pens.a!=null&&m.pens.h!==m.pens.a)?` <span class="note">(${m.pens.h}–${m.pens.a} pens)</span>`:'';
+  const w=fin?koWinner(m):null;
+  const wl=w?(w===team?' <span style="color:#22c55e;font-weight:700">W</span>':' <span style="color:var(--bad);font-weight:700">L</span>'):'';
+  const live=st.cls==='live'?' <span class="kostatus live">LIVE</span>':'';
+  return `<div style="font-size:13px;color:var(--ink-dim);padding:2px 0">${when?esc(when)+' · ':''}<b>${KO_STAGE_SHORT[m.stage]||'KO'}</b> v ${opp?flag(opp)+' '+esc(opp):'<span class="note">TBD</span>'}${score}${pens}${wl}${live}</div>`;
 }
 function viewBracketGraphic(){
   const ms=S.config.knockoutMatches||[];
