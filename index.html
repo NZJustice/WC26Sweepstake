@@ -1187,6 +1187,19 @@ const KO_F_ORDER=[103];
 // Each R32 slot is identifiable by its group winner(1X)/runner-up(2X) team(s).
 const KO_R32_SLOTS={73:['2A','2B'],74:['1E'],75:['1F'],76:['1C'],77:['1I'],78:['2E','2I'],79:['1A'],80:['1L'],81:['1D'],82:['1G'],83:['2K','2L'],84:['1H'],85:['1B'],86:['1J'],87:['1K'],88:['2D','2G']};
 const KO_FEEDERS={89:[74,77],90:[73,75],91:[76,78],92:[79,80],93:[83,84],94:[81,82],95:[86,88],96:[85,87],97:[89,90],98:[93,94],99:[91,92],100:[95,96],101:[97,98],102:[99,100],103:[101,102]};
+// Official kickoff instant per slot (UTC), from the FIFA schedule via the audited WC26
+// calendar tool (ET+4h) and cross-checked against the feed's fixture instants. FIFA match
+// numbering is NOT chronological within a day (M90 kicks off before M89), so unnamed
+// feed placeholders (home/away both null) are seated in their true slot by matching this
+// instant — date-order dealing put Mexico–England (slot 92, Estadio Azteca, 6 Jul 00:00Z)
+// on the Seattle fixture's day. Also stamps synthetic/TBD cards so every slot shows its
+// real kickoff. 103 here = the app's Final slot (the third-place match isn't stored).
+const KO_SLOT_UTC={
+  89:'2026-07-04T21:00:00Z',90:'2026-07-04T17:00:00Z',91:'2026-07-05T20:00:00Z',92:'2026-07-06T00:00:00Z',
+  93:'2026-07-06T19:00:00Z',94:'2026-07-07T00:00:00Z',95:'2026-07-07T16:00:00Z',96:'2026-07-07T20:00:00Z',
+  97:'2026-07-09T20:00:00Z',98:'2026-07-10T19:00:00Z',99:'2026-07-11T21:00:00Z',100:'2026-07-12T01:00:00Z',
+  101:'2026-07-14T19:00:00Z',102:'2026-07-15T19:00:00Z',103:'2026-07-19T19:00:00Z'
+};
 // Map each knockout match to its true bracket slot and return matches per round in
 // bracket display order. Returns null (→ caller falls back to date order) if group
 // results aren't all in yet, so it never renders a broken/partial tree.
@@ -1208,7 +1221,16 @@ function orderBracket(byStage){
       const list=(byStage[key]||[]).slice(),used=new Set();
       for(const s of order){const exp=KO_FEEDERS[s].map(winnerOf).filter(Boolean);
         const m=exp.length?list.find(x=>!used.has(x)&&exp.some(t=>has(x,t))):null; if(m){slot[s]=m;used.add(m);}}
-      const rem=list.filter(x=>!used.has(x)).sort((a,b)=>new Date(a.date||0)-new Date(b.date||0));
+      // Seat leftover (mostly still-unnamed) fixtures in their TRUE slot by matching the
+      // official kickoff instant — FIFA numbering isn't chronological within a day, so
+      // plain date-order dealing can pin a placeholder (and its date) on the wrong tie.
+      // Date order remains the fallback for anything the schedule map can't place
+      // (e.g. a rescheduled kickoff).
+      const rem=list.filter(x=>!used.has(x));
+      for(const s of order){if(slot[s])continue;const w=KO_SLOT_UTC[s];if(!w)continue;
+        const i=rem.findIndex(x=>x.date&&new Date(x.date).getTime()===Date.parse(w));
+        if(i>=0)slot[s]=rem.splice(i,1)[0];}
+      rem.sort((a,b)=>new Date(a.date||0)-new Date(b.date||0));
       for(const s of order){if(!slot[s]&&rem.length)slot[s]=rem.shift();}
       // Feed fixtures can lag actual advancement: a team that won its previous round
       // (so it's in S.results.advanced) may have no next-round fixture yet, or only a
@@ -1222,7 +1244,7 @@ function orderBracket(byStage){
         const [fa,fb]=KO_FEEDERS[s].map(winnerOf);
         if(!fa&&!fb)continue;                       // both feeders undecided → leave TBD
         const m=slot[s];
-        if(!m){const dh=(fa&&!taken(fa))?fa:null,da=(fb&&!taken(fb))?fb:null;if(dh||da)slot[s]={stage:key,home:dh,away:da,sh:null,sa:null,status:"SCHEDULED",winner:null,synthetic:true};continue;}
+        if(!m){const dh=(fa&&!taken(fa))?fa:null,da=(fb&&!taken(fb))?fb:null;if(dh||da)slot[s]={stage:key,home:dh,away:da,sh:null,sa:null,status:"SCHEDULED",winner:null,date:KO_SLOT_UTC[s]||null,synthetic:true};continue;}
         if(m.home&&m.away)continue;                 // real fixture already has both teams
         // Fill EVERY empty side of a real fixture with a feeder winner the feed hasn't
         // shown yet — the feed pre-creates next-round fixtures with one or BOTH sides
@@ -1241,7 +1263,7 @@ function orderBracket(byStage){
     place('LAST_16',KO_R16_ORDER);place('QUARTER_FINALS',KO_QF_ORDER);place('SEMI_FINALS',KO_SF_ORDER);place('FINAL',KO_F_ORDER);
     // Keep every round's full slot count (TBD placeholder for any still-empty slot) so the
     // flex tree stays aligned and connectors line up even when a round is only partly known.
-    const ph=(s,key)=>slot[s]||{stage:key,home:null,away:null,sh:null,sa:null,status:"SCHEDULED",winner:null,synthetic:true};
+    const ph=(s,key)=>slot[s]||{stage:key,home:null,away:null,sh:null,sa:null,status:"SCHEDULED",winner:null,date:KO_SLOT_UTC[s]||null,synthetic:true};
     return {
       LAST_32:KO_R32_ORDER.map(s=>slot[s]).filter(Boolean),
       LAST_16:KO_R16_ORDER.map(s=>ph(s,'LAST_16')),
