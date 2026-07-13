@@ -1,8 +1,8 @@
 name: Sync WC2026 results
 on:
-  schedule:
-    - cron: "*/30 * * * *"   # every 30 minutes
-  workflow_dispatch: {}        # manual "Run workflow" button (for testing)
+  # Wind-down 2026-07-14: group stage ended 27 Jun; the every-30-min cron was
+  # retired (it only syncs GROUP scores). Manual dispatch kept just in case.
+  workflow_dispatch: {}        # manual "Run workflow" button
 jobs:
   sync:
     runs-on: ubuntu-latest

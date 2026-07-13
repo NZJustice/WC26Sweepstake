@@ -2,7 +2,9 @@ name: WC2026 knockout round-up
 on:
   schedule:
     - cron: "*/30 * * * *"     # every 30 min: pull results, refresh bracket + standings (no Chat post)
-    - cron: "0 6,20 * * *"     # 8am & 6pm NZST: refresh + post the Chat round-up (NZ is UTC+12 in Jun/Jul)
+    # Wind-down 2026-07-14: the twice-daily Chat round-up schedule ("0 6,20 * * *",
+    # 8am & 6pm NZST) is retired -- the organiser posts the last few match threads
+    # manually in-app. Re-add that cron line to restore automated Chat posts.
   workflow_dispatch: {}        # manual run = data refresh only (no Chat)
 jobs:
   roundup:
@@ -10,8 +12,8 @@ jobs:
     steps:
       - name: Trigger knockout-roundup edge function
         run: |
-          # Post the Chat round-up ONLY on the twice-daily schedule; the every-30-min and
-          # manual runs are data-only (post=0) so the Chat space isn't spammed.
+          # The twice-daily Chat schedule was retired 2026-07-14, so every scheduled
+          # and manual run is now data-only (post=0) -- no Chat messages.
           POST=0
           if [ "${{ github.event.schedule }}" = "0 6,20 * * *" ]; then POST=1; fi
           curl -fsS -X POST "https://voqwpmmgrvalavvmzrih.supabase.co/functions/v1/knockout-roundup" \
