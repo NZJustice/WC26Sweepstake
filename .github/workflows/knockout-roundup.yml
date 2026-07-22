@@ -1,10 +1,8 @@
 name: WC2026 knockout round-up
 on:
-  schedule:
-    - cron: "*/30 * * * *"     # every 30 min: pull results, refresh bracket + standings (no Chat post)
-    # Wind-down 2026-07-14: the twice-daily Chat round-up schedule ("0 6,20 * * *",
-    # 8am & 6pm NZST) is retired -- the organiser posts the last few match threads
-    # manually in-app. Re-add that cron line to restore automated Chat posts.
+  # Sunset 2026-07-22: tournament over (Spain champions), all standings final --
+  # the every-30-min data cron is retired too; no schedules remain. Manual
+  # dispatch kept in case a one-off data refresh is ever needed.
   workflow_dispatch: {}        # manual run = data refresh only (no Chat)
 jobs:
   roundup:
