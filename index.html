@@ -275,6 +275,8 @@ const CONFIG = {
   SUPABASE_URL:  "https://voqwpmmgrvalavvmzrih.supabase.co",
   SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZvcXdwbW1ncnZhbGF2dm16cmloIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0NTI0NjgsImV4cCI6MjA5NjAyODQ2OH0.t0kROq7-8CgwKpJmymKsOtvANHIztwhSC9u8ab4rTVM"
 };
+// Tournament over — the site is retiring. Shown in the top banner and the farewell card.
+const SUNSET_HTML='This site retires on <b>Wednesday 29 July 2026</b> — save anything you want to keep before then.';
 
 /* ============ Tournament data: 2026 FIFA World Cup, confirmed draw ============ */
 const GROUPS = {
@@ -918,7 +920,7 @@ function render(){
   if(!S){return;}            // landing / missing-pool screens set their own view
   tabsBar();
   const v=$("#view");
-  if(tab==="join"&&S.config.drawDone)tab=(currentStageIndex()>=1||S.config.knockoutFocus)?"knock":"board";
+  if(tab==="join"&&S.config.drawDone)tab=((S.results.advanced.W||[])[0])?"board":(currentStageIndex()>=1||S.config.knockoutFocus)?"knock":"board";
   if(tab==="join")v.innerHTML=viewJoin();
   else if(tab==="board")v.innerHTML=viewBoard();
   else if(tab==="mine")v.innerHTML=viewMine();
@@ -1035,7 +1037,13 @@ function viewBoard(){
   const lead=simple
     ?(champ?`🏆 Winner: <b>${esc(ownerNames||'?')}</b> — owns ${flag(champ)} ${esc(champ)}.${mainP}${scWin}`:(S.config.drawDone?"Whoever owns the World Cup winner takes it. Wins &amp; losses so far:":"Draw not run yet."))
     :(S.config.drawDone?(champ?`Champions: ${flag(champ)} ${esc(champ)}.${mainP} Final standings.${scWin}`:"Live standings. Updates as results go in."):"Draw not run yet.");
-  return `<div class="card"><h2>Leaderboard</h2>
+  // Farewell card once the champion is decided: thanks, a player-visible data
+  // download, and the retirement notice. The winner/prize recap lives in `lead`.
+  const farewell=(champ&&S.config.drawDone)?`<div class="card"><h2>🏆 Thanks for playing!</h2>
+    <p class="lead">That&rsquo;s the 2026 World Cup all wrapped up — thanks for being part of the sweepstake. The final standings below stay up until the site retires.</p>
+    <div class="row"><button class="btn sm" id="b_csv">⬇ Download final standings (CSV)</button>${isOrganiser()?`<span class="note">Organisers: full backup (incl. payments) via Organiser &rarr; Export backup.</span>`:''}</div>
+    <p class="note" style="margin-top:10px">${SUNSET_HTML}</p></div>`:'';
+  return farewell+`<div class="card"><h2>Leaderboard</h2>
     <p class="lead">${lead}</p>
     ${cards}
     <div class="row" style="margin-top:14px"><button class="btn ghost sm" id="b_share">Copy invite link</button>${meId?`<button class="btn ghost sm" id="b_pin">${pinTop()?'📌 Unpin me':'📌 Pin me to top'}</button>`:''}</div></div>`;
@@ -1552,6 +1560,17 @@ function wire(){
   if($("#j_signin"))$("#j_signin").onclick=()=>Auth.signIn();
   if($("#b_share"))$("#b_share").onclick=shareLink;
   if($("#b_pin"))$("#b_pin").onclick=()=>{setPinTop(!pinTop());render();};
+  if($("#b_csv"))$("#b_csv").onclick=()=>{
+    const simple=!!S.config.simpleMode;
+    const rows=standings().map((r,i)=>{const f=simple?playerForm(r.id):null;const sc=scTeamOf(r.id);
+      return [i+1,r.name,simple?`${f.w}-${f.d}-${f.l}`:r.pts,`${r.alive}/${r.teams}`,(S.assignments[r.id]||[]).join("; "),sc||""];});
+    const head=["Rank","Player",simple?"W-D-L":"Points","Teams in","Teams","Second chance"];
+    const q=v=>`"${String(v).replace(/"/g,'""')}"`;
+    const csv=[head,...rows].map(r=>r.map(q).join(",")).join("\r\n");
+    const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["﻿"+csv],{type:"text/csv"}));
+    a.download=(S.config.header||"sweepstake").replace(/\W+/g,"_")+"_final_standings.csv";a.click();
+    toast("Final standings downloaded");
+  };
   if($("#m_share"))$("#m_share").onclick=shareLink;
   if($("#m_pers"))$("#m_pers").onclick=()=>copyText(meLink(),"Personal link copied");
   if($("#o_share"))$("#o_share").onclick=shareLink;
@@ -1725,7 +1744,7 @@ async function boot(){
     S=await DB.loadPool(poolId);
     if(!S){renderMissingPool(poolId);return;}
     computeMe();
-    if(S.config.drawDone){tab=(currentStageIndex()>=1||S.config.knockoutFocus)?"knock":((meId&&S.assignments[meId])?"mine":"board");}else{tab="join";}
+    if(S.config.drawDone){tab=((S.results.advanced.W||[])[0])?"board":(currentStageIndex()>=1||S.config.knockoutFocus)?"knock":((meId&&S.assignments[meId])?"mine":"board");}else{tab="join";}
     render();
     let timer=null;
     unsub=DB.subscribe(poolId,()=>{clearTimeout(timer);timer=setTimeout(refresh,250);});
@@ -1734,6 +1753,8 @@ async function boot(){
 (async function(){
   if(!CONFIGURED){const b=$("#demobar");b.hidden=false;
     b.innerHTML='Demo mode — no backend configured, data stays in this browser only. See SETUP.md to go live with Supabase.';}
+  else{const b=$("#demobar");b.hidden=false;
+    b.innerHTML='🏆 That&rsquo;s a wrap — thanks for playing! '+SUNSET_HTML;}
   await Auth.init();
   Auth.onChange(()=>{boot();});
   await boot();
